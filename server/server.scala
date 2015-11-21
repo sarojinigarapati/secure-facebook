@@ -12,6 +12,7 @@ import spray.http._
 object project4 extends App with SimpleRoutingApp{
 	override def main(args: Array[String]){
 
+		private val AvgNumOfFrds: Int = 200
 		var posts = new ListBuffer[Queue[String]]()
 		var friendLists = new ListBuffer[ListBuffer[Int]]()
 		var profiles = new ListBuffer[Profile]()  // store list of class objects
@@ -51,9 +52,9 @@ object project4 extends App with SimpleRoutingApp{
 						}
 						profiles += new Profile(id, first_name, last_name, age, email, gender, relation_status)
 					}
-					// Add some random friends
+					// Populate the friends list
 					for(i <- 0 to numOfUsers-1){
-						for(j <- 0 to 20){
+						for(j <- 0 to AvgNumOfFrds){
 							var frd: Int = Random.nextInt(numOfUsers)
 							if(frd != i && !friendLists(i).contains(frd)){
 								friendLists(i) += frd

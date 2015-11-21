@@ -30,17 +30,32 @@ object project4 {
 						case Failure(error) =>
 							println(error+"something wrong")
 					}
+					
 
 				case StartSimulation() =>
 					println("Server is initialized! We can start the simulation!")
+					for(i <- 0 until numOfUsers){
+						var myID: String = i.toString
+						val actor = context.actorOf(Props(new FacebookAPI(system, numOfUsers)),name=myID)
+						actor ! "DoActivity"
+					}
 			}
 		}
 
-		class FacebookAPI(system: ActorSystem) extends Actor{
+		class FacebookAPI(system: ActorSystem, numOfUsers: Int) extends Actor{
 			import system.dispatcher
 			val pipeline = sendReceive
 
 			def receive = {
+
+				case "DoActivity" =>
+
+					if(System.currentTimeMillis - start < 300000){ // 5 Minutes
+						self ! "DoActivity"
+					} else {
+						context.system.shutdown()
+					}
+
 				case Post(userID: Int) =>
 					var text: String = Random.alphanumeric.take(5).mkString
 					pipeline(Post("http://localhost:8080/facebook/Post?userID="+userID+"text"+text))
@@ -55,6 +70,7 @@ object project4 {
 		if(1>args.size){
 			println("Please enter number of facebook users to start simulation!")
 		} else {
+			private val start: Long = System.currentTimeMillis
 			implicit val system = ActorSystem("ClientSystem")
 			val clientMaster =system.actorOf(Props(new ClientMaster((args(0).toInt),system)),name="clientMaster")
 			clientMaster ! Inilialize()
