@@ -12,7 +12,7 @@ import spray.http._
 object project4 extends App with SimpleRoutingApp{
 	override def main(args: Array[String]){
 
-		private val AvgNumOfFrds: Int = 200
+		val AvgNumOfFrds: Int = 200
 		var posts = new ListBuffer[Queue[String]]()
 		var friendLists = new ListBuffer[ListBuffer[Int]]()
 		var profiles = new ListBuffer[Profile]()  // store list of class objects
@@ -26,6 +26,7 @@ object project4 extends App with SimpleRoutingApp{
 		println("project4 - Facebook Simulator")
 		class Server(num: Int) extends Actor{
 
+			private var numOfUsers: Int = _
 			
 			def receive = {
 				case Init(numOfUsers: Int) =>
@@ -61,6 +62,7 @@ object project4 extends App with SimpleRoutingApp{
 							}
 						}
 					}
+					this.numOfUsers = numOfUsers
 
 				case GetProfile(userID: Int) =>
 
@@ -69,7 +71,7 @@ object project4 extends App with SimpleRoutingApp{
 
 				case AddFriend(userID: Int) =>
 					var frd: Int = Random.nextInt(numOfUsers)
-					while(frd == i || friendLists(i).contains(frd)){
+					while(frd == userID || friendLists(userID).contains(frd)){
 						frd = Random.nextInt(numOfUsers)
 					}
 					friendLists(userID) += frd
