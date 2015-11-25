@@ -12,7 +12,7 @@ import spray.http._
 object project4 extends App with SimpleRoutingApp{
 	override def main(args: Array[String]){
 
-		val AvgNumOfFrds: Int = 200
+		val AvgNumOfFrds: Int = 5
 		var posts = new ListBuffer[Queue[String]]()
 		var friendLists = new ListBuffer[ListBuffer[Int]]()
 		var profiles = new ListBuffer[Profile]()  // store list of class objects
@@ -125,7 +125,7 @@ object project4 extends App with SimpleRoutingApp{
 					parameters("userID".as[Int], "text".as[String]) { (userID, text) =>
 						server ! Post(userID, text)
 						complete {
-							"User "+userID+" posted"
+							"User "+userID+" posted "+text
 						}
 					}
 				}
