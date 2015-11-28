@@ -5,9 +5,18 @@ import akka.actor.Props
 import akka.routing.RoundRobinRouter
 import scala.util.Random
 import scala.concurrent.duration._
+// import scala.collection.immutable.Queue
 import scala.collection.mutable._
 import spray.routing.SimpleRoutingApp
+import spray.http.MediaTypes
 import spray.http._
+import spray.httpx.SprayJsonSupport._
+import spray.httpx.marshalling._
+import spray.httpx.unmarshalling._
+import spray.json._
+import DefaultJsonProtocol._ 
+
+
 
 object project4 extends App with SimpleRoutingApp{
 	override def main(args: Array[String]){
@@ -16,17 +25,32 @@ object project4 extends App with SimpleRoutingApp{
 		var posts = new ListBuffer[Queue[String]]()
 		var friendLists = new ListBuffer[ListBuffer[Int]]()
 		var profiles = new ListBuffer[Profile]()  // store list of class objects
+		var albums = new ListBuffer[ListBuffer[ListBuffer[String]]]
 
 		case class Init(numOfUsers: Int)
+		case class AddProfile(userID: Int, profile: Profile)
 		case class GetProfile(userID: Int)
 		case class Post(userID: Int, text: String)
-		case class AddFriend(userID: Int)
+		case class AddFriend(userID: Int, totalUsers: Int)
 		case class UnFriend(userID: Int, firendID: Int)
+		case class dummy(first: String, second: String)
+		case class BigDummy(userID: String, d: dummy)
+		case class Profile(id: String, first_name: String, last_name: String, age: String, email: String, gender: String, relation_status: String)
+		case class SignUp(id: Int, profile: Profile)
+
+		object MyJsonProtocol extends DefaultJsonProtocol {
+			implicit val ObjFormat = jsonFormat7(Profile)
+			implicit val SignUpFormat = jsonFormat2(SignUp)
+			implicit val dummyFormat = jsonFormat2(dummy)
+			implicit val BigDummyFormat = jsonFormat2(BigDummy)
+		}
+
+		import MyJsonProtocol._
 
 		println("project4 - Facebook Simulator")
 		class Server(num: Int) extends Actor{
 
-			private var numOfUsers: Int = _
+			var Users: Int = _
 			
 			def receive = {
 				case Init(numOfUsers: Int) =>
@@ -34,58 +58,33 @@ object project4 extends App with SimpleRoutingApp{
 					for(i <- 0 to numOfUsers-1) friendLists += new ListBuffer[Int]
 					for(i <- 0 to numOfUsers-1) posts += new Queue[String]
 					for(i <- 0 to numOfUsers-1){ // Create random profiles
-						var id: Int = i
-						var first_name: String = Random.alphanumeric.take(5).mkString
-						var last_name: String = Random.alphanumeric.take(5).mkString
-						var age: Int = Random.nextInt(82) + 18
-						var email: String = Random.alphanumeric.take(10).mkString
-						var gender: String = ""
-						if(Random.nextInt(1) == 0){
-							gender = "Male"
-						} else {
-							gender = "Female"
-						}
-						var relation_status = ""
-						if(Random.nextInt(1) == 0){
-							relation_status = "Single"
-						} else {
-							relation_status = "Married"
-						}
-						profiles += new Profile(id, first_name, last_name, age, email, gender, relation_status)
+						profiles += Profile("0", "NA", "NA", "18", "NA", "NA", "NA")
 					}
-					// Populate the friends list
-					for(i <- 0 to numOfUsers-1){
-						for(j <- 0 to AvgNumOfFrds){
-							var frd: Int = Random.nextInt(numOfUsers)
-							if(frd != i && !friendLists(i).contains(frd)){
-								friendLists(i) += frd
-							}
-						}
-					}
-					this.numOfUsers = numOfUsers
+					Users = numOfUsers
+					println("Initialised for "+Users+" user!!")
 
-				case GetProfile(userID: Int) =>
+				case AddProfile(userID: Int, profile: Profile) =>
+					profiles(userID) = profile
+					friendLists(userID) += userID
 
 				case Post(userID: Int, text: String) =>
 					posts(userID) += text
 
-				case AddFriend(userID: Int) =>
-					var frd: Int = Random.nextInt(numOfUsers)
-					while(frd == userID || friendLists(userID).contains(frd)){
-						frd = Random.nextInt(numOfUsers)
+				case AddFriend(userID: Int, totalUsers: Int) =>
+					// println("Adding friend to user "+userID)
+					var frd: Int = Random.nextInt(totalUsers)
+					var count: Int = 0
+					while((5>count) && friendLists(userID).contains(frd)){
+						frd = Random.nextInt(totalUsers)
+						count = count + 1
 					}
-					friendLists(userID) += frd
+					if(count < 5){
+						friendLists(userID) += frd
+					}
 
 				case UnFriend(userID: Int, firendID: Int) =>
 
-
-
-
 			}
-		}
-
-		class Profile(id: Int, first_name: String, last_name: String, age: Int, email: String, gender: String, relation_status: String) {
-			
 		}
 
 		implicit val system = ActorSystem("ServerSystem")
@@ -96,18 +95,47 @@ object project4 extends App with SimpleRoutingApp{
 			get {
 				path("hello") {
 					complete {
-						"Hello am there"
+						"Hello am there!!!\n"
 					}
 				}
 			} ~
-			get {
-				path("facebook"/"getprofile") {
+			post {
+				path("facebook"/"getProfile") {
 					parameters("userID".as[Int]) { (userID) =>
-						server ! GetProfile(userID)
+						// try catch for java.lang.IndexOutOfBoundsException
 						complete {
-							"Getting profile for user "+userID
+							profiles(userID)
 						}
 					}
+				}
+			}~
+			post {
+				path("facebook"/"getPosts") {
+					parameters("userID".as[Int]) { (userID) =>
+						// try catch for java.lang.IndexOutOfBoundsException
+						complete {
+							posts(userID).toString()
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"getFriendList") {
+					parameters("userID".as[Int]) { (userID) =>
+						// try catch for java.lang.IndexOutOfBoundsException
+						complete {
+							friendLists(userID).toString()
+						}
+					}
+				}
+			}~
+			post {
+				path("dummy"){
+						entity(as[BigDummy]) { d =>
+							complete {
+								d
+							}
+						}
 				}
 			}~
 			post {
@@ -116,6 +144,16 @@ object project4 extends App with SimpleRoutingApp{
 						server ! Init(numOfUsers)
 						complete {
 							"Initialization is done"
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"addProfile"){
+					entity(as[SignUp]) { signUp =>
+						server ! AddProfile(signUp.id, signUp.profile)
+						complete {
+							"User "+signUp.id+" added"
 						}
 					}
 				}
@@ -131,9 +169,9 @@ object project4 extends App with SimpleRoutingApp{
 				}
 			}~
 			post {
-				path("facebook"/"addfriend") {
-					parameters("userID".as[Int]) { (userID) =>
-						server ! AddFriend(userID)
+				path("facebook"/"addFriend") {
+					parameters("userID".as[Int], "totalUsers".as[Int]) { (userID, totalUsers) =>
+						server ! AddFriend(userID, totalUsers)
 						complete {
 							"Added a friend to user "+userID
 						}
@@ -141,7 +179,7 @@ object project4 extends App with SimpleRoutingApp{
 				}
 			}~
 			post {
-				path("facebook"/"unfriend") {
+				path("facebook"/"unFriend") {
 					parameters("userID".as[Int], "firendID".as[Int]) { (userID, firendID) =>
 						server ! UnFriend(userID, firendID)
 						complete {
