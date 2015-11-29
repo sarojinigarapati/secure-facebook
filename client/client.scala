@@ -5,6 +5,7 @@ import akka.actor.Props
 import akka.actor.Cancellable;
 import scala.util.Random
 import scala.collection.mutable.ListBuffer
+import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.duration._
 import spray.client.pipelining._
 import spray.http._
@@ -29,48 +30,40 @@ object project4 {
 		case class SignUp(id: Int, profile: Profile)
 		// class Color(val name: String, val red: Int, val green: Int, val blue: Int)
 
-// class Post(input_id: String, input_message: String, input_from: String, input_to: String, input_taggers: ArrayBuffer[String]) extends java.io.Serializable {
-//    var id: String = input_id
-//    var message: String = input_message
-//    var from: String = input_from
-//    var to: String = input_to
-//    var tags: ArrayBuffer[String] = input_taggers
-//  }
-// implicit object PostJsonFormat extends JsonFormat[FacebookServer.Post] {
-   
-//    def write(post: FacebookServer.Post) = JsObject(
-//      "id" -> JsString(post.id),
-//      "message" -> JsString(post.message),
-//      "from" -> JsString(post.from),
-//      "to" -> JsString(post.to),
-//      "tags" -> JsArray(post.tags.map(_.toJson).toVector))
+		class Post(input_id: String, input_message: String, input_from: String, input_to: String, input_taggers: ArrayBuffer[String]) extends java.io.Serializable {
+		   	var id: String = input_id
+		   	var message: String = input_message
+		   	var from: String = input_from
+		   	var to: String = input_to
+		   	var tags: ArrayBuffer[String] = input_taggers
+		}
 
-//    def read(value: JsValue) = {
-//      value.asJsObject.getFields("id", "message", "from", "to", "tags") match {
-//        case Seq(JsString(id), JsString(message), JsString(from), JsString(to), JsArray(tags)) =>
-//          new FacebookServer.Post(id, message, from, to, tags.map(_.convertTo[String]).to[ArrayBuffer])
-//        case Seq(JsString(message), JsString(from), JsArray(tags)) =>
-//          new FacebookServer.Post(null, message, from, null, tags.map(_.convertTo[String]).to[ArrayBuffer])
-//        case _ =>
-//          throw new DeserializationException("Invalid post")
-//      }
-//    }
-//  }
 		object MyJsonProtocol extends DefaultJsonProtocol {
 			implicit val ObjFormat = jsonFormat7(Profile)
 			implicit val SignUpFormat = jsonFormat2(SignUp)
 			implicit val dummyFormat = jsonFormat2(dummy)
 			implicit val BigDummyFormat = jsonFormat2(BigDummy)
-			// implicit object ColorJsonFormat extends RootJsonFormat[Color] {
-			//     def write(c: Color) =
-			//       JsArray(JsString(c.name), JsNumber(c.red), JsNumber(c.green), JsNumber(c.blue))
 
-			//     def read(value: JsValue) = value match {
-			//       case JsArray(Vector(JsString(name), JsNumber(red), JsNumber(green), JsNumber(blue))) =>
-			//         new Color(name, red.toInt, green.toInt, blue.toInt)
-			//       case _ => deserializationError("Color expected")
-			//     }
-			// }
+			implicit object PostJsonFormat extends JsonFormat[Post] {
+			   
+			    def write(post: Post) = JsObject(
+			      "id" -> JsString(post.id),
+			      "message" -> JsString(post.message),
+			      "from" -> JsString(post.from),
+			      "to" -> JsString(post.to),
+			      "tags" -> JsArray(post.tags.map(_.toJson).toVector))
+
+			    def read(value: JsValue) = {
+			      value.asJsObject.getFields("id", "message", "from", "to", "tags") match {
+			        case Seq(JsString(id), JsString(message), JsString(from), JsString(to), JsArray(tags)) =>
+			         	new Post(id, message, from, to, tags.map(_.convertTo[String]).to[ArrayBuffer])
+			       	case Seq(JsString(message), JsString(from), JsArray(tags)) =>
+			        	new Post(null, message, from, null, tags.map(_.convertTo[String]).to[ArrayBuffer])
+			       	case _ =>
+			        	throw new DeserializationException("Invalid post")
+			     	}
+			   }
+			}
 		}
 
 		import MyJsonProtocol._
@@ -84,7 +77,9 @@ object project4 {
 			val pipeline = sendReceive
 			
 			def receive = {
-				case "start" =>
+				case "Start" =>
+					// tell the server about the number of users in the system and 
+					// initialise the required data structures
 					val responseFuture = pipeline(Post("http://localhost:8080/facebook/start?numOfUsers="+numOfUsers))
 					responseFuture onComplete {
 						case Success(str: HttpResponse) =>
@@ -95,15 +90,21 @@ object project4 {
 					}
 				
 				case "StartSimulation" =>
+					// Create an actore for each facebook user
 					println("Server is initialized! We can start the simulation!")
 					for(i <- 0 until numOfUsers){
 						var myID: String = i.toString
 						val actor = context.actorOf(Props(new FacebookAPI(system, i, numOfUsers)),name=myID)
-						actor ! "InitUser"
+						println("users doing sign up")
+						actor ! "SignUp"
 						actor ! "Stop"
 					}
 
 				case Stat(userPosts: Int) =>
+					// Number of posts
+					// Number of pictures
+					// Number of albums
+					// Number of pages
 					totalPosts = totalPosts + userPosts
 					count = count + 1
 					if(count == numOfUsers){
@@ -131,7 +132,7 @@ object project4 {
 
 			def receive = {
 
-				case "InitUser" =>
+				case "SignUp" =>
 					// Create the profie data
 					var id: String = myID.toString
 					var first_name: String = Random.alphanumeric.take(5).mkString
@@ -153,7 +154,7 @@ object project4 {
 					// val json = s"""{"id": "$id", "first_name": "$first_name","last_name": "$last_name", "age": "$age", "email": "$email", "gender": "$gender", "relation_status": "$relation_status"}"""
 					val json = SignUp(myID, Profile(id, first_name, last_name, 
 									age, email, gender, relation_status)).toJson.toString
-					println("user "+myID+" doing sign up")
+					
 					val responseFuture = pipeline(Post("http://localhost:8080/facebook/addProfile",HttpEntity(MediaTypes.`application/json`, json)))
 					responseFuture onComplete {
 						case Success(str: HttpResponse) =>
@@ -261,7 +262,7 @@ object project4 {
 		} else {
 			implicit val system = ActorSystem("ClientSystem")
 			val clientMaster =system.actorOf(Props(new ClientMaster((args(0).toInt),system)),name="clientMaster")
-			clientMaster ! "start"
+			clientMaster ! "Start"
 		}
 		
 	}	
