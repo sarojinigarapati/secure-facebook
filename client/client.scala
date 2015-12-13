@@ -15,6 +15,9 @@ import spray.httpx.SprayJsonSupport._
 import spray.httpx.marshalling._
 import spray.httpx.unmarshalling._
 import spray.http.MediaTypes
+import java.security._
+ import java.security.KeyPairGenerator
+import javax.crypto._
 
 object project4 {
 	def main(args: Array[String]){
@@ -28,9 +31,8 @@ object project4 {
 		case class GetAlbum(userID: Int, albumID: Int)
 		case class GetPosts(userID: Int)
 		case class GetFriendList(userID: Int)
+		case class GetPage(userID: Int, pageID: Int)
 
-		case class dummy(first: String, second: String)
-		case class BigDummy(userID: String, d: dummy)
 		case class Profile(id: String, first_name: String, last_name: String, age: String, email: String, gender: String, relation_status: String)
 		case class SignUp(id: Int, profile: Profile)
 		case class Picture(id: Int, from: Int, text: String, likes: Array[String])
@@ -38,45 +40,12 @@ object project4 {
 		case class Page(id: Int, from: Int, name: String)
 		// case class AlbumWrapper(userID: Int, albumID: Int,  album: Album)
 
-		// class Album(input_id: String, input_from: String, input_taggers: ArrayBuffer[String]) extends java.io.Serializable {
-		//    	// Fields
-		//    	var id: String = input_id
-		//    	var from: String = input_from
-		//    	// Edges
-		//    	var likes: ArrayBuffer[String] = input_taggers
-		// }
-
 		object MyJsonProtocol extends DefaultJsonProtocol {
 			implicit val ObjFormat = jsonFormat7(Profile)
 			implicit val SignUpFormat = jsonFormat2(SignUp)
 			implicit val PictureFormat = jsonFormat4(Picture)
 			implicit val AlbumFormat = jsonFormat4(Album)
 			implicit val PageFormat = jsonFormat3(Page)
-			
-			implicit val dummyFormat = jsonFormat2(dummy)
-			implicit val BigDummyFormat = jsonFormat2(BigDummy)
-
-			// implicit object AlbumJsonFormat extends RootJsonFormat[Album] {
-			   
-			//     def write(album: Album) = JsObject(
-			//       "id" -> JsString(album.id),
-			//       "from" -> JsString(album.from),
-			//       "likes" -> JsArray(album.likes.map(_.toJson).toVector))
-
-			//     def read(value: JsValue) = {
-			//       value.asJsObject.getFields("id", "from", "likes") match {
-			//         case Seq(JsString(id), JsString(from), JsArray(likes)) =>
-			//          	new Album(id, from, likes.map(_.convertTo[String]).to[ArrayBuffer])
-			//        	case Seq(JsString(message), JsString(from), JsArray(likes)) =>
-			//         	new Album(null, from, likes.map(_.convertTo[String]).to[ArrayBuffer])
-			//        	case _ =>
-			//         	throw new DeserializationException("Invalid Album")
-			//      	}
-			//    }
-			// }
-
-			// implicit val AlbumWrapperFormat = jsonFormat3(AlbumWrapper)
-
 		}
 
 		import MyJsonProtocol._
@@ -124,6 +93,7 @@ object project4 {
 					}
 
 				case "ShutDown" =>
+					pipeline(Post("http://localhost:8080/facebook/shutdown"))
 					context.system.shutdown()
 			}
 		}
@@ -131,6 +101,8 @@ object project4 {
 		class FacebookAPI(system: ActorSystem, myID: Int, numOfUsers: Int) 
 			extends Actor{
 
+			// var kpg: KeyPairGenerator =_
+			var kp: KeyPair =_
 			var numOfPosts: Int =_
 			var numOfAlbums: Int =_
 			// var cancels = new ListBuffer[Cancellable]()
@@ -138,8 +110,10 @@ object project4 {
 			var cancelPosts2: Cancellable =_
 			var cancelAddFriend: Cancellable =_
 			var cancelAddAlbum: Cancellable =_
+			var cancelAddPage: Cancellable =_
 			var cancelGetProfile: Cancellable =_
 			var cancelGetAlbum: Cancellable =_
+			var cancelGetPage: Cancellable =_
 
 			import system.dispatcher
 			val pipeline = sendReceive
@@ -147,6 +121,13 @@ object project4 {
 			def receive = {
 
 				case "SignUp" =>
+					// Generate RSA keys
+					var kpg: KeyPairGenerator = KeyPairGenerator.getInstance("RSA")
+					kpg.initialize(2048)
+					kp = kpg.genKeyPair()
+					val publicKey = kp.getPublic()
+					val privateKey = kp.getPrivate()
+
 					// Create the profie data
 					var id: String = myID.toString
 					var first_name: String = Random.alphanumeric.take(5).mkString
@@ -165,16 +146,45 @@ object project4 {
 					} else {
 						relation_status = "Married"
 					}
-					// val json = s"""{"id": "$id", "first_name": "$first_name","last_name": "$last_name", "age": "$age", "email": "$email", "gender": "$gender", "relation_status": "$relation_status"}"""
-					val json = SignUp(myID, Profile(id, first_name, last_name, 
+					val profile = SignUp(myID, Profile(id, first_name, last_name, 
 									age, email, gender, relation_status)).toJson.toString
+					// println("profile as json string = "+profile)
+					// val profile = SignUp(myID, Profile(id, first_name, last_name, 
+					// 				age, email, gender, relation_status))
+
+					// Encrypt Data
+					val profileBytes = profile.getBytes("UTF-8")
+					var cipher: Cipher = Cipher.getInstance("RSA")
+					cipher.init(Cipher.ENCRYPT_MODE, kp.getPublic())
+					val json = (cipher.doFinal(profileBytes)).toJson.toString
+
+					// val responseFuture = pipeline(Post("http://localhost:8080/facebook/AddProfile?userID="+myID+"&profile="+cipherData))
+					// responseFuture onComplete {
+					// 	case Success(str: HttpResponse) =>
+					// 		println(str.entity.asString)
+					// 		str.entity.asString.parseJson.convertTo[Array[Byte]]
+					// 		// self ! GetProfile(myID)
+					// 		// self ! "DoActivity"
+					// 	case Failure(error) =>
+					// 		println(error+"something wrong")
+					// }
 					
 					val responseFuture = pipeline(Post("http://localhost:8080/facebook/addProfile",HttpEntity(MediaTypes.`application/json`, json)))
 					responseFuture onComplete {
 						case Success(str: HttpResponse) =>
 							// println(str.entity.asString)
+							var bytes: Array[Byte] = str.entity.asString.parseJson.convertTo[Array[Byte]]
+							// println("received encrypted bytes as json string = "+bytes.toJson.toString)
+							// Decrypt Data
+							var cipher: Cipher = Cipher.getInstance("RSA")
+							cipher.init(Cipher.DECRYPT_MODE, kp.getPrivate())
+							val decryptedBytes = (cipher.doFinal(bytes))
+							val signUp = (new String(decryptedBytes, "UTF-8")).parseJson.convertTo[SignUp]
+							println(signUp.profile.toJson)
+
+							// val json = (cipher.doFinal(bytes)).toString.parseJson.convertTo[SignUp]
 							// self ! GetProfile(myID)
-							self ! "DoActivity"
+							// self ! "DoActivity"
 						case Failure(error) =>
 							println(error+"something wrong")
 					}
@@ -184,28 +194,23 @@ object project4 {
 					// cancelStop = system.scheduler.schedule(0 milliseconds,100 milliseconds,self,"Stop")
 					
 					cancelAddFriend = system.scheduler.schedule(0 milliseconds,2000 milliseconds,self,"AddFriend")
-					cancelAddAlbum = system.scheduler.schedule(0 milliseconds,4000 milliseconds,self,"AddAlbum")
-					cancelGetAlbum = system.scheduler.schedule(30 milliseconds,2000 milliseconds,self,GetAlbum(myID, 0))
-					cancelGetProfile = system.scheduler.schedule(60 milliseconds,8000 milliseconds,self,GetProfile(Random.nextInt(numOfUsers)))
+					cancelAddAlbum = system.scheduler.schedule(0 milliseconds,8000 milliseconds,self,"AddAlbum")
+					cancelAddPage = system.scheduler.schedule(90 milliseconds,7000 milliseconds,self,"AddPage")
+					cancelGetAlbum = system.scheduler.schedule(30 milliseconds,3000 milliseconds,self,GetAlbum(myID, 0))
+					cancelGetProfile = system.scheduler.schedule(60 milliseconds,6000 milliseconds,self,GetProfile(Random.nextInt(numOfUsers)))
 					if(myID % 2 == 0 ){
-						cancelPosts1 = system.scheduler.schedule(150 milliseconds,3000 milliseconds,self,"Post")
+						cancelPosts1 = system.scheduler.schedule(150 milliseconds,2000 milliseconds,self,"Post")
 					} else {
-						cancelPosts2 = system.scheduler.schedule(180 milliseconds,6000 milliseconds,self,"Post")
+						cancelPosts2 = system.scheduler.schedule(180 milliseconds,4000 milliseconds,self,"Post")
 					}
-					// cancels += system.scheduler.schedule(0 milliseconds,100 milliseconds,self,"Stop")
-					// if(myID % 2 == 0 ){
-					// 	cancels += system.scheduler.schedule(0 milliseconds,50 milliseconds,self,"Post")
-					// } else {
-					// 	cancels += system.scheduler.schedule(0 milliseconds,100 milliseconds,self,"Post")
-					// }
-					// // cancels += system.scheduler.schedule(0 milliseconds,1000 milliseconds,self,"AddFriend")
-					
+
 				case "StopActivity" =>
 					if(System.currentTimeMillis - start > simulationTime){ // in milliseconds
 						// println("Shutting down the system!!")
 						// cancelStop.cancel()
 						cancelAddFriend.cancel()
 						cancelAddAlbum.cancel()
+						cancelAddPage.cancel()
 						cancelGetProfile.cancel()
 						cancelGetAlbum.cancel()
 						if(myID % 2 == 0 ){
@@ -230,8 +235,20 @@ object project4 {
 							println(error+"something wrong")
 					}
 
+				case GetPage(userID: Int, pageID: Int) =>
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getPage?userID="+userID+"&pageID="+pageID))
+					responseFuture onComplete {
+						case Success(str: HttpResponse) =>
+							val page = str.entity.asString.parseJson.convertTo[Page]
+							println("user "+myID+" received page of "+userID+"\n"+
+								"\npageID "+page.id+
+								"\nname "+page.name)
+						case Failure(error) =>
+							println(error+"something wrong")
+					}
+
 				case GetPosts(userID: Int) =>
-					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getPosts?userID="+userID))
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getPage?userID="+userID))
 					responseFuture onComplete {
 						case Success(str: HttpResponse) =>
 							println("user "+myID+" received posts of "+userID+"\n"+

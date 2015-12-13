@@ -13,8 +13,6 @@ import spray.httpx.SprayJsonSupport._
 import spray.json._
 import DefaultJsonProtocol._ 
 
-
-
 object project4 extends App with SimpleRoutingApp{
 	override def main(args: Array[String]){
 
@@ -23,6 +21,7 @@ object project4 extends App with SimpleRoutingApp{
 		var friendLists = new ArrayBuffer[ListBuffer[Int]]()
 		var profiles = new HashMap[Int, Profile]()  // store list of class objects
 		var albums = new HashMap[Int, HashMap[Int, Album]]()
+		var pages = new HashMap[Int, HashMap[Int, Page]]()
 
 		case class Init(numOfUsers: Int)
 		case class AddProfile(userID: Int, profile: Profile)
@@ -30,57 +29,22 @@ object project4 extends App with SimpleRoutingApp{
 		case class Post(userID: Int, text: String)
 		case class AddFriend(userID: Int, totalUsers: Int)
 		case class AddAlbum(userID: Int, albumID: Int, album: Album) 
-		case class UnFriend(userID: Int, firendID: Int)
+		case class AddPage(userID: Int, pageID: Int, page: Page)
 
-		case class dummy(first: String, second: String)
-		case class BigDummy(userID: String, d: dummy)
 		case class Profile(id: String, first_name: String, last_name: String, age: String, email: String, gender: String, relation_status: String)
 		case class SignUp(id: Int, profile: Profile)
 		case class Picture(id: Int, from: Int, text: String, likes: Array[String])
 		case class Album(id: Int, from: Int, pictures: Array[Picture], likes: Array[String])
+		case class Page(id: Int, from: Int, name: String)
 		// case class AlbumWrapper(userID: Int, albumID: Int, album: Album)
-
-		// class Album(input_id: String, input_from: String, input_taggers: ArrayBuffer[String]){
-		//    	// Fields
-		//    	var id: String = input_id
-		//    	var from: String = input_from
-		//    	// Edges
-		//    	var likes: ArrayBuffer[String] = input_taggers
-		// }
 
 		object MyJsonProtocol extends DefaultJsonProtocol {
 			implicit val ObjFormat = jsonFormat7(Profile)
 			implicit val SignUpFormat = jsonFormat2(SignUp)
 			implicit val PictureFormat = jsonFormat4(Picture)
 			implicit val AlbumFormat = jsonFormat4(Album)
-
-			implicit val dummyFormat = jsonFormat2(dummy)
-			implicit val BigDummyFormat = jsonFormat2(BigDummy)
-
-			// implicit object AlbumJsonFormat extends RootJsonFormat[Album] {
-			   
-			//     def write(album: Album) = JsObject(
-			//       "id" -> JsString(album.id),
-			//       "from" -> JsString(album.from),
-			//       "likes" -> JsArray(album.likes.map(_.toJson).toVector))
-
-			//     def read(value: JsValue) = {
-			//       value.asJsObject.getFields("id", "from", "likes") match {
-			//         case Seq(JsString(id), JsString(from), JsArray(likes)) =>
-			//          	new Album(id, from, likes.map(_.convertTo[String]).to[ArrayBuffer])
-			//        	case Seq(JsString(message), JsString(from), JsArray(likes)) =>
-			//         	new Album(null, from, likes.map(_.convertTo[String]).to[ArrayBuffer])
-			//        	case _ =>
-			//         	throw new DeserializationException("Invalid Album")
-			//      	}
-			//    }
-			// }
-
-			// implicit val AlbumWrapperFormat = jsonFormat3(AlbumWrapper)
-
+			implicit val PageFormat = jsonFormat3(Page)
 		}
-
-		
 
 		println("project4 - Facebook Simulator")
 		class Server(num: Int) extends Actor{
@@ -121,6 +85,11 @@ object project4 extends App with SimpleRoutingApp{
 				case AddAlbum(userID: Int, albumID: Int, album: Album) =>
 					albums(userID)(albumID) = album
 					// println(albums(userID)(albumID).toString)
+				case AddPage(userID: Int, pageID: Int, page: Page) =>
+					pages(userID)(pageID) = page
+
+				case "Shutdown" =>
+					// context.system.shutdown()
 			}
 		}
 
@@ -137,11 +106,59 @@ object project4 extends App with SimpleRoutingApp{
 				}
 			} ~
 			post {
+				path("facebook"/"shutdown") {
+					server ! "Shutdown"
+					complete {
+						"OK"
+					}
+				}
+			}~
+			post {
+				path("facebook"/"AddProfile") {
+					parameters("userID".as[Int], "profile".as[String]) { (userID, profile) =>
+						println("Adding a profile for user "+userID)
+						// println(profile)
+						// server ! AddProfile(userID, profile)
+						complete {
+							profile
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"addProfile"){
+					entity(as[Array[Byte]]) { bytes =>
+						println("ok")
+						// println("Adding a profile for user "+signUp.id)
+						// server ! AddProfile(signUp.id, signUp.profile)
+						complete {
+							bytes
+						}
+					}
+				}
+			}~
+			post {
 				path("facebook"/"getProfile") {
 					parameters("userID".as[Int]) { (userID) =>
 						// try catch for java.lang.IndexOutOfBoundsException
+						println("Sending profile to user "+userID)
 						complete {
 							profiles(userID)
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"getPage") {
+					parameters("userID".as[Int], "pageID".as[Int]) { (userID, pageID) =>
+						// try catch for java.lang.IndexOutOfBoundsException
+						println("Sending a page of user "+userID)
+						var res: Page = Page(0,0,"Invalid Page id!!")
+						if((pages(userID).contains(pageID)) == true){
+							res = pages(userID)(pageID)
+						}
+						complete {
+							res
 						}
 					}
 				}
@@ -150,6 +167,7 @@ object project4 extends App with SimpleRoutingApp{
 				path("facebook"/"getPosts") {
 					parameters("userID".as[Int]) { (userID) =>
 						// try catch for java.lang.IndexOutOfBoundsException
+						println("Sending posts to user "+userID)
 						complete {
 							posts(userID).toString()
 						}
@@ -160,6 +178,7 @@ object project4 extends App with SimpleRoutingApp{
 				path("facebook"/"getFriendList") {
 					parameters("userID".as[Int]) { (userID) =>
 						// try catch for java.lang.IndexOutOfBoundsException
+						println("Sending friend list to user "+userID)
 						complete {
 							friendLists(userID).toString()
 						}
@@ -170,6 +189,7 @@ object project4 extends App with SimpleRoutingApp{
 				path("facebook"/"getAlbum") {
 					parameters("userID".as[Int], "albumID".as[Int]) { (userID, albumID) =>
 						// try catch for java.lang.IndexOutOfBoundsException
+						println("Sending an album to user "+userID)
 						var dummyPic: Picture = Picture(0,0,"dummyPicture",Array("0"))
 						var res: Album = Album(0,0,Array(dummyPic),Array("0"))
 						if((albums(userID).contains(albumID)) == true){
@@ -192,12 +212,12 @@ object project4 extends App with SimpleRoutingApp{
 				}
 			}~
 			post {
-				path("facebook"/"addProfile"){
-					entity(as[SignUp]) { signUp =>
-						println("Adding a profile!")
-						server ! AddProfile(signUp.id, signUp.profile)
+				path("facebook"/"addPage"){
+					entity(as[Page]) { page =>
+						println("Adding a page for user "+page.from)
+						server ! AddPage(page.from, page.id, page)
 						complete {
-							"User "+signUp.id+" added"
+							"Page added for user "+page.from
 						}
 					}
 				}
@@ -205,7 +225,7 @@ object project4 extends App with SimpleRoutingApp{
 			post {
 				path("facebook"/"addAlbum"){
 					entity(as[Album]) { album =>
-						// println("Adding an album!")
+						println("Adding an album for user "+album.from.toInt)
 						server ! AddAlbum(album.from.toInt, album.id.toInt, album)
 						complete {
 							"User "+album.from.toInt+" added an album"
@@ -213,17 +233,6 @@ object project4 extends App with SimpleRoutingApp{
 					}
 				}
 			}~
-			// post {
-			// 	path("facebook"/"addAlbum"){
-			// 		entity(as[AlbumWrapper]) { albumWrapper =>
-			// 			println("Adding an album!")
-			// 			server ! AddAlbum(albumWrapper.userID, albumWrapper.albumID, albumWrapper.album)
-			// 			complete {
-			// 				"User "+albumWrapper.userID+" added an album"
-			// 			}
-			// 		}
-			// 	}
-			// }~
 			post {
 				path("facebook"/"post") {
 					parameters("userID".as[Int], "text".as[String]) { (userID, text) =>
