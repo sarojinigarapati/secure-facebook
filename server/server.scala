@@ -12,6 +12,10 @@ import spray.http._
 import spray.httpx.SprayJsonSupport._
 import spray.json._
 import DefaultJsonProtocol._ 
+import java.security._
+import java.security.spec._
+// import java.security.KeyFactory
+import javax.crypto._
 
 object project4 extends App with SimpleRoutingApp{
 	override def main(args: Array[String]){
@@ -19,28 +23,28 @@ object project4 extends App with SimpleRoutingApp{
 		val AvgNumOfFrds: Int = 5
 		var posts = new ArrayBuffer[Queue[String]]()
 		var friendLists = new ArrayBuffer[ListBuffer[Int]]()
-		var profiles = new HashMap[Int, Profile]()  // store list of class objects
+		var profiles = new HashMap[Int, SignUp]()  // store list of class objects
 		var albums = new HashMap[Int, HashMap[Int, Album]]()
 		var pages = new HashMap[Int, HashMap[Int, Page]]()
 
 		case class Init(numOfUsers: Int)
-		case class AddProfile(userID: Int, profile: Profile)
+		case class AddProfile(userID: Int, profile: SignUp)
 		case class GetProfile(userID: Int)
 		case class Post(userID: Int, text: String)
 		case class AddFriend(userID: Int, totalUsers: Int)
 		case class AddAlbum(userID: Int, albumID: Int, album: Album) 
 		case class AddPage(userID: Int, pageID: Int, page: Page)
 
-		case class Profile(id: String, first_name: String, last_name: String, age: String, email: String, gender: String, relation_status: String)
-		case class SignUp(id: Int, profile: Profile)
+		// case class Profile(id: String, first_name: String, last_name: String, age: String, email: String, gender: String, relation_status: String)
+		case class SignUp(id: Int, pkey: Array[Byte], profile: Array[Byte])
 		case class Picture(id: Int, from: Int, text: String, likes: Array[String])
 		case class Album(id: Int, from: Int, pictures: Array[Picture], likes: Array[String])
 		case class Page(id: Int, from: Int, name: String)
 		// case class AlbumWrapper(userID: Int, albumID: Int, album: Album)
 
 		object MyJsonProtocol extends DefaultJsonProtocol {
-			implicit val ObjFormat = jsonFormat7(Profile)
-			implicit val SignUpFormat = jsonFormat2(SignUp)
+			// implicit val ProfileFormat = jsonFormat7(Profile)
+			implicit val SignUpFormat = jsonFormat3(SignUp)
 			implicit val PictureFormat = jsonFormat4(Picture)
 			implicit val AlbumFormat = jsonFormat4(Album)
 			implicit val PageFormat = jsonFormat3(Page)
@@ -58,12 +62,12 @@ object project4 extends App with SimpleRoutingApp{
 					for(i <- 0 to numOfUsers-1) posts += new Queue[String]
 					for(i <- 0 to numOfUsers-1) albums(i) = new HashMap[Int,Album]
 					for(i <- 0 to numOfUsers-1){ // Create random profiles
-						profiles(i) = Profile("NA", "NA", "NA", "NA", "NA", "NA", "NA")
+						profiles(i) = SignUp(0, Array[Byte](0), Array[Byte](0))
 					}
 					Users = numOfUsers
 					println("Initialised for "+Users+" user!!")
 
-				case AddProfile(userID: Int, profile: Profile) =>
+				case AddProfile(userID: Int, profile: SignUp) =>
 					profiles(userID) = profile
 					friendLists(userID) += userID
 
@@ -127,12 +131,20 @@ object project4 extends App with SimpleRoutingApp{
 			}~
 			post {
 				path("facebook"/"addProfile"){
-					entity(as[Array[Byte]]) { bytes =>
-						println("ok")
-						// println("Adding a profile for user "+signUp.id)
-						// server ! AddProfile(signUp.id, signUp.profile)
+					entity(as[SignUp]) { signUp =>
+						println("Adding a profile for user "+signUp.id)
+						// Decrypt profile
+						val kf: KeyFactory = KeyFactory.getInstance("RSA"); // or "EC" or whatever
+						// PrivateKey priKey = kf.generatePrivate(new PKCS8EncodedKeySpec(privateKeyBytes));
+						val pubKey: PublicKey = kf.generatePublic(new X509EncodedKeySpec(signUp.pkey))
+						// var cipher: Cipher = Cipher.getInstance("RSA")
+						// cipher.init(Cipher.DECRYPT_MODE, pubKey)
+						// val decryptedBytes = cipher.doFinal(signUp.profile)
+						// val profile = (new String(decryptedBytes, "UTF-8")).parseJson.convertTo[Profile]
+						// println(profile.toJson)
+						server ! AddProfile(signUp.id, signUp)
 						complete {
-							bytes
+							signUp.profile
 						}
 					}
 				}

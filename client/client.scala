@@ -16,7 +16,7 @@ import spray.httpx.marshalling._
 import spray.httpx.unmarshalling._
 import spray.http.MediaTypes
 import java.security._
- import java.security.KeyPairGenerator
+import java.security.KeyPairGenerator
 import javax.crypto._
 
 object project4 {
@@ -34,15 +34,16 @@ object project4 {
 		case class GetPage(userID: Int, pageID: Int)
 
 		case class Profile(id: String, first_name: String, last_name: String, age: String, email: String, gender: String, relation_status: String)
-		case class SignUp(id: Int, profile: Profile)
+		// case class SignUp(id: Int, profile: Array[Byte])
+		case class SignUp(id: Int, pkey: Array[Byte], profile: Array[Byte])
 		case class Picture(id: Int, from: Int, text: String, likes: Array[String])
 		case class Album(id: Int, from: Int, pictures: Array[Picture], likes: Array[String])
 		case class Page(id: Int, from: Int, name: String)
 		// case class AlbumWrapper(userID: Int, albumID: Int,  album: Album)
 
 		object MyJsonProtocol extends DefaultJsonProtocol {
-			implicit val ObjFormat = jsonFormat7(Profile)
-			implicit val SignUpFormat = jsonFormat2(SignUp)
+			implicit val ProfileFormat = jsonFormat7(Profile)
+			implicit val SignUpFormat = jsonFormat3(SignUp)
 			implicit val PictureFormat = jsonFormat4(Picture)
 			implicit val AlbumFormat = jsonFormat4(Album)
 			implicit val PageFormat = jsonFormat3(Page)
@@ -103,6 +104,7 @@ object project4 {
 
 			// var kpg: KeyPairGenerator =_
 			var kp: KeyPair =_
+			var aesKeyProfile: SecretKey =_
 			var numOfPosts: Int =_
 			var numOfAlbums: Int =_
 			// var cancels = new ListBuffer[Cancellable]()
@@ -122,11 +124,14 @@ object project4 {
 
 				case "SignUp" =>
 					// Generate RSA keys
-					var kpg: KeyPairGenerator = KeyPairGenerator.getInstance("RSA")
+					val kpg: KeyPairGenerator = KeyPairGenerator.getInstance("RSA")
 					kpg.initialize(2048)
 					kp = kpg.genKeyPair()
-					val publicKey = kp.getPublic()
-					val privateKey = kp.getPrivate()
+
+					 // Generate AES key
+				    val kgen: KeyGenerator = KeyGenerator.getInstance("AES")
+				    kgen.init(128)
+				    aesKeyProfile = kgen.generateKey()
 
 					// Create the profie data
 					var id: String = myID.toString
@@ -146,17 +151,24 @@ object project4 {
 					} else {
 						relation_status = "Married"
 					}
-					val profile = SignUp(myID, Profile(id, first_name, last_name, 
-									age, email, gender, relation_status)).toJson.toString
+
+					// Encrypt profile
+					val profile = Profile(id, first_name, last_name, age, email, gender, relation_status).toJson.toString
+					val profileBytes = profile.getBytes("UTF-8")
+					var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+					aescipher.init(Cipher.ENCRYPT_MODE, aesKeyProfile)
+					val bytes = aescipher.doFinal(profileBytes)
+
+					val json = SignUp(myID, kp.getPublic().getEncoded(), bytes).toJson.toString
 					// println("profile as json string = "+profile)
 					// val profile = SignUp(myID, Profile(id, first_name, last_name, 
 					// 				age, email, gender, relation_status))
 
-					// Encrypt Data
-					val profileBytes = profile.getBytes("UTF-8")
-					var cipher: Cipher = Cipher.getInstance("RSA")
-					cipher.init(Cipher.ENCRYPT_MODE, kp.getPublic())
-					val json = (cipher.doFinal(profileBytes)).toJson.toString
+					// // Encrypt Data
+					// val profileBytes = profile.getBytes("UTF-8")
+					// var cipher: Cipher = Cipher.getInstance("RSA")
+					// cipher.init(Cipher.ENCRYPT_MODE, kp.getPublic())
+					// val json = (cipher.doFinal(profileBytes)).toJson.toString
 
 					// val responseFuture = pipeline(Post("http://localhost:8080/facebook/AddProfile?userID="+myID+"&profile="+cipherData))
 					// responseFuture onComplete {
@@ -176,11 +188,11 @@ object project4 {
 							var bytes: Array[Byte] = str.entity.asString.parseJson.convertTo[Array[Byte]]
 							// println("received encrypted bytes as json string = "+bytes.toJson.toString)
 							// Decrypt Data
-							var cipher: Cipher = Cipher.getInstance("RSA")
-							cipher.init(Cipher.DECRYPT_MODE, kp.getPrivate())
-							val decryptedBytes = (cipher.doFinal(bytes))
-							val signUp = (new String(decryptedBytes, "UTF-8")).parseJson.convertTo[SignUp]
-							println(signUp.profile.toJson)
+							var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+							aescipher.init(Cipher.DECRYPT_MODE, aesKeyProfile)
+							val decryptedBytes = aescipher.doFinal(bytes)
+							val profile = (new String(decryptedBytes, "UTF-8")).parseJson.convertTo[Profile]
+							println(profile.toJson)
 
 							// val json = (cipher.doFinal(bytes)).toString.parseJson.convertTo[SignUp]
 							// self ! GetProfile(myID)
