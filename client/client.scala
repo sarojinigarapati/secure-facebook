@@ -16,8 +16,9 @@ import spray.httpx.marshalling._
 import spray.httpx.unmarshalling._
 import spray.http.MediaTypes
 import java.security._
-import java.security.KeyPairGenerator
+import java.security.spec._
 import javax.crypto._
+import org.apache.commons.codec.binary.Base64
 
 object project4 {
 	def main(args: Array[String]){
@@ -32,14 +33,15 @@ object project4 {
 		case class GetPosts(userID: Int)
 		case class GetFriendList(userID: Int)
 		case class GetPage(userID: Int, pageID: Int)
+		case class GiveAccessToFriend(frdID: Int, bytes: Array[Byte])
 
 		case class Profile(id: String, first_name: String, last_name: String, age: String, email: String, gender: String, relation_status: String)
-		// case class SignUp(id: Int, profile: Array[Byte])
 		case class SignUp(id: Int, pkey: Array[Byte], profile: Array[Byte])
 		case class Picture(id: Int, from: Int, text: String, likes: Array[String])
 		case class Album(id: Int, from: Int, pictures: Array[Picture], likes: Array[String])
 		case class Page(id: Int, from: Int, name: String)
-		// case class AlbumWrapper(userID: Int, albumID: Int,  album: Album)
+		// case class AccessFriend(userID: Int, frdID: Int, bytes: Array[Byte])
+		case class AccessFriend(userID: Int, frdID: Int, bytes: String)
 
 		object MyJsonProtocol extends DefaultJsonProtocol {
 			implicit val ProfileFormat = jsonFormat7(Profile)
@@ -47,6 +49,7 @@ object project4 {
 			implicit val PictureFormat = jsonFormat4(Picture)
 			implicit val AlbumFormat = jsonFormat4(Album)
 			implicit val PageFormat = jsonFormat3(Page)
+			implicit val AccessFriendFormat = jsonFormat3(AccessFriend)
 		}
 
 		import MyJsonProtocol._
@@ -185,17 +188,18 @@ object project4 {
 					responseFuture onComplete {
 						case Success(str: HttpResponse) =>
 							// println(str.entity.asString)
-							var bytes: Array[Byte] = str.entity.asString.parseJson.convertTo[Array[Byte]]
-							// println("received encrypted bytes as json string = "+bytes.toJson.toString)
-							// Decrypt Data
-							var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
-							aescipher.init(Cipher.DECRYPT_MODE, aesKeyProfile)
-							val decryptedBytes = aescipher.doFinal(bytes)
-							val profile = (new String(decryptedBytes, "UTF-8")).parseJson.convertTo[Profile]
-							println(profile.toJson)
+							// var bytes: Array[Byte] = str.entity.asString.parseJson.convertTo[Array[Byte]]
+							
+							// // Decrypt Data
+							// var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+							// aescipher.init(Cipher.DECRYPT_MODE, aesKeyProfile)
+							// val decryptedBytes = aescipher.doFinal(bytes)
+							// val profile = (new String(decryptedBytes, "UTF-8")).parseJson.convertTo[Profile]
+							// println(profile.toJson)
 
 							// val json = (cipher.doFinal(bytes)).toString.parseJson.convertTo[SignUp]
-							// self ! GetProfile(myID)
+							self ! GetProfile(2)
+							// self ! "AddFriend"
 							// self ! "DoActivity"
 						case Failure(error) =>
 							println(error+"something wrong")
@@ -206,43 +210,51 @@ object project4 {
 					// cancelStop = system.scheduler.schedule(0 milliseconds,100 milliseconds,self,"Stop")
 					
 					cancelAddFriend = system.scheduler.schedule(0 milliseconds,2000 milliseconds,self,"AddFriend")
-					cancelAddAlbum = system.scheduler.schedule(0 milliseconds,8000 milliseconds,self,"AddAlbum")
-					cancelAddPage = system.scheduler.schedule(90 milliseconds,7000 milliseconds,self,"AddPage")
-					cancelGetAlbum = system.scheduler.schedule(30 milliseconds,3000 milliseconds,self,GetAlbum(myID, 0))
-					cancelGetProfile = system.scheduler.schedule(60 milliseconds,6000 milliseconds,self,GetProfile(Random.nextInt(numOfUsers)))
-					if(myID % 2 == 0 ){
-						cancelPosts1 = system.scheduler.schedule(150 milliseconds,2000 milliseconds,self,"Post")
-					} else {
-						cancelPosts2 = system.scheduler.schedule(180 milliseconds,4000 milliseconds,self,"Post")
-					}
+					// cancelAddAlbum = system.scheduler.schedule(0 milliseconds,8000 milliseconds,self,"AddAlbum")
+					// cancelAddPage = system.scheduler.schedule(90 milliseconds,7000 milliseconds,self,"AddPage")
+					// cancelGetAlbum = system.scheduler.schedule(30 milliseconds,3000 milliseconds,self,GetAlbum(myID, 0))
+					// cancelGetProfile = system.scheduler.schedule(60 milliseconds,6000 milliseconds,self,GetProfile(Random.nextInt(numOfUsers)))
+					// if(myID % 2 == 0 ){
+					// 	cancelPosts1 = system.scheduler.schedule(150 milliseconds,2000 milliseconds,self,"Post")
+					// } else {
+					// 	cancelPosts2 = system.scheduler.schedule(180 milliseconds,4000 milliseconds,self,"Post")
+					// }
 
 				case "StopActivity" =>
 					if(System.currentTimeMillis - start > simulationTime){ // in milliseconds
 						// println("Shutting down the system!!")
 						// cancelStop.cancel()
 						cancelAddFriend.cancel()
-						cancelAddAlbum.cancel()
-						cancelAddPage.cancel()
-						cancelGetProfile.cancel()
-						cancelGetAlbum.cancel()
-						if(myID % 2 == 0 ){
-							cancelPosts1.cancel()
-						} else {
-							cancelPosts2.cancel()
-						}
+						// cancelAddAlbum.cancel()
+						// cancelAddPage.cancel()
+						// cancelGetProfile.cancel()
+						// cancelGetAlbum.cancel()
+						// if(myID % 2 == 0 ){
+						// 	cancelPosts1.cancel()
+						// } else {
+						// 	cancelPosts2.cancel()
+						// }
 						// self ! GetPosts(myID)
 						// self ! GetFriendList(myID)
 						context.parent ! Stat(numOfPosts)
 					}
 
-				case GetProfile(userID: Int) =>
-					println("user "+myID+" requesting profile of "+userID)
-					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getProfile?userID="+userID))
+				case GetProfile(getID: Int) =>
+					println("user "+myID+" requesting profile of "+getID)
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getProfile?userID="+myID+"&getID="+getID))
 					responseFuture onComplete {
 						case Success(str: HttpResponse) =>
-							println("user "+myID+" received profile of "+userID+"\n"+
-								str.entity.asString)
-								// str.entity.asString.parseJson.convertTo[Profile].age)
+							if(str.entity.asString == "PermissionDenied"){
+								println("PermissionDenied for user "+myID+" to access profile of "+getID)
+							} else {
+								var bytes: Array[Byte] = str.entity.asString.parseJson.convertTo[Array[Byte]]
+								// Decrypt Data
+								var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+								aescipher.init(Cipher.DECRYPT_MODE, aesKeyProfile)
+								val decryptedBytes = aescipher.doFinal(bytes)
+								val profile = (new String(decryptedBytes, "UTF-8")).parseJson.convertTo[Profile]
+								println(profile.toJson)
+							}
 						case Failure(error) =>
 							println(error+"something wrong")
 					}
@@ -274,8 +286,10 @@ object project4 {
 					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getFriendList?userID="+userID))
 					responseFuture onComplete {
 						case Success(str: HttpResponse) =>
-							println("user "+myID+" received friend list of "+userID+"\n"+
-								str.entity.asString)
+							var frdListArray: Array[Int] = str.entity.asString.parseJson.convertTo[Array[Int]]
+							println(frdListArray.toJson)
+							// println("user "+myID+" received friend list of "+userID+"\n"+
+							// 	str.entity.asString)
 						case Failure(error) =>
 							println(error+"something wrong")
 					}
@@ -306,10 +320,40 @@ object project4 {
 					}
 
 				case "AddFriend" =>
-					val responseFuture = pipeline(Post("http://localhost:8080/facebook/addFriend?userID="+myID+"&totalUsers="+numOfUsers))
+					var frdID: Int = Random.nextInt(numOfUsers)
+					while(frdID == myID){
+						frdID = Random.nextInt(numOfUsers)
+					}
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/addFriend?userID="+myID+"&frdID="+frdID))
 					responseFuture onComplete {
 						case Success(str: HttpResponse) =>
 							// println(str.entity.asString)
+							if(str.entity.asString == "AlreadyFriend"){
+								println("user "+frdID+" is already a friend to user "+myID)
+							} else {
+								var bytes: Array[Byte] = str.entity.asString.parseJson.convertTo[Array[Byte]]
+								// self ! GiveAccessToFriend(frdID, bytes)
+							}
+						case Failure(error) =>
+							println(error+"something wrong")
+					}
+
+				case GiveAccessToFriend(frdID: Int, bytes: Array[Byte]) =>
+					// Generate the friends public key
+					val kf: KeyFactory = KeyFactory.getInstance("RSA"); // or "EC" or whatever
+					val frdPublicKey: PublicKey = kf.generatePublic(new X509EncodedKeySpec(bytes))
+
+					// Encrypt your profile AES secret key with frd's public key
+					var rsaCipher: Cipher = Cipher.getInstance("RSA")
+					rsaCipher.init(Cipher.ENCRYPT_MODE, frdPublicKey)
+					val encryptedString = Base64.encodeBase64String(rsaCipher.doFinal(aesKeyProfile.getEncoded()))
+
+					// Send the encrypted AES secret key for the server to store
+					val json = AccessFriend(myID, frdID, encryptedString).toJson.toString
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/accessFriend",HttpEntity(MediaTypes.`application/json`, json)))
+					responseFuture onComplete {
+						case Success(str: HttpResponse) =>
+							println(str.entity.asString)
 						case Failure(error) =>
 							println(error+"something wrong")
 					}

@@ -14,8 +14,8 @@ import spray.json._
 import DefaultJsonProtocol._ 
 import java.security._
 import java.security.spec._
-// import java.security.KeyFactory
 import javax.crypto._
+import org.apache.commons.codec.binary.Base64
 
 object project4 extends App with SimpleRoutingApp{
 	override def main(args: Array[String]){
@@ -24,6 +24,7 @@ object project4 extends App with SimpleRoutingApp{
 		var posts = new ArrayBuffer[Queue[String]]()
 		var friendLists = new ArrayBuffer[ListBuffer[Int]]()
 		var profiles = new HashMap[Int, SignUp]()  // store list of class objects
+		var profilesAccess = new HashMap[Int, HashMap[Int, String]]() 
 		var albums = new HashMap[Int, HashMap[Int, Album]]()
 		var pages = new HashMap[Int, HashMap[Int, Page]]()
 
@@ -40,14 +41,15 @@ object project4 extends App with SimpleRoutingApp{
 		case class Picture(id: Int, from: Int, text: String, likes: Array[String])
 		case class Album(id: Int, from: Int, pictures: Array[Picture], likes: Array[String])
 		case class Page(id: Int, from: Int, name: String)
-		// case class AlbumWrapper(userID: Int, albumID: Int, album: Album)
+		// case class AccessFriend(userID: Int, frdID: Int, bytes: Array[Byte])
+		case class AccessFriend(userID: Int, frdID: Int, bytes: String)
 
 		object MyJsonProtocol extends DefaultJsonProtocol {
-			// implicit val ProfileFormat = jsonFormat7(Profile)
 			implicit val SignUpFormat = jsonFormat3(SignUp)
 			implicit val PictureFormat = jsonFormat4(Picture)
 			implicit val AlbumFormat = jsonFormat4(Album)
 			implicit val PageFormat = jsonFormat3(Page)
+			implicit val AccessFriendFormat = jsonFormat3(AccessFriend)
 		}
 
 		println("project4 - Facebook Simulator")
@@ -61,11 +63,12 @@ object project4 extends App with SimpleRoutingApp{
 					for(i <- 0 to numOfUsers-1) friendLists += new ListBuffer[Int]
 					for(i <- 0 to numOfUsers-1) posts += new Queue[String]
 					for(i <- 0 to numOfUsers-1) albums(i) = new HashMap[Int,Album]
+					for(i <- 0 to numOfUsers-1) profilesAccess(i) = new HashMap[Int,String]
 					for(i <- 0 to numOfUsers-1){ // Create random profiles
 						profiles(i) = SignUp(0, Array[Byte](0), Array[Byte](0))
 					}
 					Users = numOfUsers
-					println("Initialised for "+Users+" user!!")
+					println("Initialised for "+Users+" user!!") 
 
 				case AddProfile(userID: Int, profile: SignUp) =>
 					profiles(userID) = profile
@@ -108,7 +111,7 @@ object project4 extends App with SimpleRoutingApp{
 						"Hello am there!!!\n"
 					}
 				}
-			} ~
+			}~
 			post {
 				path("facebook"/"shutdown") {
 					server ! "Shutdown"
@@ -151,11 +154,18 @@ object project4 extends App with SimpleRoutingApp{
 			}~
 			post {
 				path("facebook"/"getProfile") {
-					parameters("userID".as[Int]) { (userID) =>
+					parameters("userID".as[Int], "getID".as[Int]) { (userID, getID) =>
 						// try catch for java.lang.IndexOutOfBoundsException
-						println("Sending profile to user "+userID)
-						complete {
-							profiles(userID)
+						if(friendLists(userID).contains(getID)){
+							println("Sending profile of user "+getID+" to user "+userID)
+							complete {
+								profiles(getID).profile
+							}
+						} else {
+							println("User "+userID+" is not friend of user "+getID)
+							complete {
+								"PermissionDenied"
+							}
 						}
 					}
 				}
@@ -192,7 +202,7 @@ object project4 extends App with SimpleRoutingApp{
 						// try catch for java.lang.IndexOutOfBoundsException
 						println("Sending friend list to user "+userID)
 						complete {
-							friendLists(userID).toString()
+							friendLists(userID).toArray.toJson.toString
 						}
 					}
 				}
@@ -256,11 +266,29 @@ object project4 extends App with SimpleRoutingApp{
 				}
 			}~
 			post {
-				path("facebook"/"addFriend") {
-					parameters("userID".as[Int], "totalUsers".as[Int]) { (userID, totalUsers) =>
-						server ! AddFriend(userID, totalUsers)
+				path("facebook"/"accessFriend"){
+					entity(as[AccessFriend]) { x =>
+						profilesAccess(x.userID)(x.frdID) = x.bytes
 						complete {
-							"Added a friend to user "+userID
+							"ok"
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"addFriend") {
+					parameters("userID".as[Int], "frdID".as[Int]) { (userID, frdID) =>
+						// server ! AddFriend(userID, totalUsers)
+						if(friendLists(userID).contains(frdID)){
+							complete {
+								"AlreadyFriend"
+							}
+						} else {
+							friendLists(userID) += frdID
+							friendLists(frdID) += userID
+							complete {
+								profiles(frdID).pkey
+							}
 						}
 					}
 				}
