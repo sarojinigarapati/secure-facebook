@@ -24,6 +24,7 @@ object project4 extends App with SimpleRoutingApp{
 		var posts = new ArrayBuffer[Queue[String]]()
 		var friendLists = new ArrayBuffer[ListBuffer[Int]]()
 		var profiles = new HashMap[Int, SignUp]()  // store list of class objects
+		var publicKeys = new HashMap[Int, PublicKey]()
 		var profilesAccess = new HashMap[Int, HashMap[Int, String]]() 
 		var albums = new HashMap[Int, HashMap[Int, Album]]()
 		var pages = new HashMap[Int, HashMap[Int, Page]]()
@@ -36,7 +37,7 @@ object project4 extends App with SimpleRoutingApp{
 		case class AddAlbum(userID: Int, albumID: Int, album: Album) 
 		case class AddPage(userID: Int, pageID: Int, page: Page)
 
-		// case class Profile(id: String, first_name: String, last_name: String, age: String, email: String, gender: String, relation_status: String)
+		case class Profile(id: String, first_name: String, last_name: String, age: String, email: String, gender: String, relation_status: String)
 		case class SignUp(id: Int, pkey: Array[Byte], profile: Array[Byte])
 		case class Picture(id: Int, from: Int, text: String, likes: Array[String])
 		case class Album(id: Int, from: Int, pictures: Array[Picture], likes: Array[String])
@@ -45,6 +46,7 @@ object project4 extends App with SimpleRoutingApp{
 		case class AccessFriend(userID: Int, frdID: Int, bytes: String)
 
 		object MyJsonProtocol extends DefaultJsonProtocol {
+			implicit val ProfileFormat = jsonFormat7(Profile)
 			implicit val SignUpFormat = jsonFormat3(SignUp)
 			implicit val PictureFormat = jsonFormat4(Picture)
 			implicit val AlbumFormat = jsonFormat4(Album)
@@ -139,12 +141,15 @@ object project4 extends App with SimpleRoutingApp{
 						// Decrypt profile
 						val kf: KeyFactory = KeyFactory.getInstance("RSA"); // or "EC" or whatever
 						// PrivateKey priKey = kf.generatePrivate(new PKCS8EncodedKeySpec(privateKeyBytes));
+						// println(signUp.pkey.toJson)
 						val pubKey: PublicKey = kf.generatePublic(new X509EncodedKeySpec(signUp.pkey))
-						// var cipher: Cipher = Cipher.getInstance("RSA")
-						// cipher.init(Cipher.DECRYPT_MODE, pubKey)
-						// val decryptedBytes = cipher.doFinal(signUp.profile)
-						// val profile = (new String(decryptedBytes, "UTF-8")).parseJson.convertTo[Profile]
-						// println(profile.toJson)
+						publicKeys(signUp.id) = pubKey
+
+						var cipher: Cipher = Cipher.getInstance("RSA")
+						cipher.init(Cipher.DECRYPT_MODE, pubKey)
+						val decryptedBytes = cipher.doFinal(signUp.profile)
+						val profile = (new String(decryptedBytes, "UTF-8")).parseJson.convertTo[Profile]
+						println(profile.toJson)
 						server ! AddProfile(signUp.id, signUp)
 						complete {
 							signUp.profile
@@ -286,6 +291,8 @@ object project4 extends App with SimpleRoutingApp{
 						} else {
 							friendLists(userID) += frdID
 							friendLists(frdID) += userID
+							// val res = publicKeys(frdID).getEncoded()
+							// print(profiles(frdID).pkey.toJson)
 							complete {
 								profiles(frdID).pkey
 							}

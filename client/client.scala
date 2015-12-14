@@ -158,9 +158,16 @@ object project4 {
 					// Encrypt profile
 					val profile = Profile(id, first_name, last_name, age, email, gender, relation_status).toJson.toString
 					val profileBytes = profile.getBytes("UTF-8")
-					var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
-					aescipher.init(Cipher.ENCRYPT_MODE, aesKeyProfile)
-					val bytes = aescipher.doFinal(profileBytes)
+
+					// Encrypt with AES symmetric key
+					// var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+					// aescipher.init(Cipher.ENCRYPT_MODE, aesKeyProfile)
+					// val bytes = aescipher.doFinal(profileBytes)
+
+					// Encrypt with RSA private key
+					var cipher: Cipher = Cipher.getInstance("RSA")
+					cipher.init(Cipher.ENCRYPT_MODE, kp.getPrivate())
+					val bytes = cipher.doFinal(profileBytes)
 
 					val json = SignUp(myID, kp.getPublic().getEncoded(), bytes).toJson.toString
 					// println("profile as json string = "+profile)
@@ -198,9 +205,9 @@ object project4 {
 							// println(profile.toJson)
 
 							// val json = (cipher.doFinal(bytes)).toString.parseJson.convertTo[SignUp]
-							self ! GetProfile(2)
+							// self ! GetProfile(myID)
 							// self ! "AddFriend"
-							// self ! "DoActivity"
+							self ! "DoActivity"
 						case Failure(error) =>
 							println(error+"something wrong")
 					}
@@ -209,7 +216,7 @@ object project4 {
 					system.scheduler.scheduleOnce(simulationTime milliseconds, self, "StopActivity")
 					// cancelStop = system.scheduler.schedule(0 milliseconds,100 milliseconds,self,"Stop")
 					
-					cancelAddFriend = system.scheduler.schedule(0 milliseconds,2000 milliseconds,self,"AddFriend")
+					cancelAddFriend = system.scheduler.schedule(4000 milliseconds,3000 milliseconds,self,"AddFriend")
 					// cancelAddAlbum = system.scheduler.schedule(0 milliseconds,8000 milliseconds,self,"AddAlbum")
 					// cancelAddPage = system.scheduler.schedule(90 milliseconds,7000 milliseconds,self,"AddPage")
 					// cancelGetAlbum = system.scheduler.schedule(30 milliseconds,3000 milliseconds,self,GetAlbum(myID, 0))
@@ -331,8 +338,13 @@ object project4 {
 							if(str.entity.asString == "AlreadyFriend"){
 								println("user "+frdID+" is already a friend to user "+myID)
 							} else {
+								println("users "+myID+" and "+frdID+ " became friends!!")
 								var bytes: Array[Byte] = str.entity.asString.parseJson.convertTo[Array[Byte]]
-								// self ! GiveAccessToFriend(frdID, bytes)
+								// var bytes: Array[Byte] = str.entity.data.toByteArray
+								// println(bytes.toJson)
+								// val kf: KeyFactory = KeyFactory.getInstance("RSA"); // or "EC" or whatever
+								// val frdPublicKey: PublicKey = kf.generatePublic(new X509EncodedKeySpec(bytes))
+								self ! GiveAccessToFriend(frdID, bytes)
 							}
 						case Failure(error) =>
 							println(error+"something wrong")
@@ -347,7 +359,7 @@ object project4 {
 					var rsaCipher: Cipher = Cipher.getInstance("RSA")
 					rsaCipher.init(Cipher.ENCRYPT_MODE, frdPublicKey)
 					val encryptedString = Base64.encodeBase64String(rsaCipher.doFinal(aesKeyProfile.getEncoded()))
-
+					// val encryptedString = rsaCipher.doFinal(aesKeyProfile.getEncoded())
 					// Send the encrypted AES secret key for the server to store
 					val json = AccessFriend(myID, frdID, encryptedString).toJson.toString
 					val responseFuture = pipeline(Post("http://localhost:8080/facebook/accessFriend",HttpEntity(MediaTypes.`application/json`, json)))
