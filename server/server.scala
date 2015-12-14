@@ -25,9 +25,10 @@ object project4 extends App with SimpleRoutingApp{
 		var friendLists = new ArrayBuffer[ListBuffer[Int]]()
 		var profiles = new HashMap[Int, SignUp]()  // store list of class objects
 		var publicKeys = new HashMap[Int, PublicKey]()
-		var profilesAccess = new HashMap[Int, HashMap[Int, String]]() 
+		var profilesAccess = new HashMap[Int, HashMap[Int, Array[Byte]]]() 
 		var albums = new HashMap[Int, HashMap[Int, Album]]()
 		var pages = new HashMap[Int, HashMap[Int, Page]]()
+		var frdRequests = new HashMap[Int, ListBuffer[Int]]()
 
 		case class Init(numOfUsers: Int)
 		case class AddProfile(userID: Int, profile: SignUp)
@@ -42,8 +43,8 @@ object project4 extends App with SimpleRoutingApp{
 		case class Picture(id: Int, from: Int, text: String, likes: Array[String])
 		case class Album(id: Int, from: Int, pictures: Array[Picture], likes: Array[String])
 		case class Page(id: Int, from: Int, name: String)
-		// case class AccessFriend(userID: Int, frdID: Int, bytes: Array[Byte])
-		case class AccessFriend(userID: Int, frdID: Int, bytes: String)
+		case class AccessFriend(userID: Int, frdID: Int, bytes: Array[Byte])
+		// case class AccessFriend(userID: Int, frdID: Int, bytes: String)
 
 		object MyJsonProtocol extends DefaultJsonProtocol {
 			implicit val ProfileFormat = jsonFormat7(Profile)
@@ -65,7 +66,7 @@ object project4 extends App with SimpleRoutingApp{
 					for(i <- 0 to numOfUsers-1) friendLists += new ListBuffer[Int]
 					for(i <- 0 to numOfUsers-1) posts += new Queue[String]
 					for(i <- 0 to numOfUsers-1) albums(i) = new HashMap[Int,Album]
-					for(i <- 0 to numOfUsers-1) profilesAccess(i) = new HashMap[Int,String]
+					for(i <- 0 to numOfUsers-1) profilesAccess(i) = new HashMap[Int,Array[Byte]]
 					for(i <- 0 to numOfUsers-1){ // Create random profiles
 						profiles(i) = SignUp(0, Array[Byte](0), Array[Byte](0))
 					}
@@ -139,17 +140,17 @@ object project4 extends App with SimpleRoutingApp{
 					entity(as[SignUp]) { signUp =>
 						println("Adding a profile for user "+signUp.id)
 						// Decrypt profile
-						val kf: KeyFactory = KeyFactory.getInstance("RSA"); // or "EC" or whatever
+						// val kf: KeyFactory = KeyFactory.getInstance("RSA"); // or "EC" or whatever
 						// PrivateKey priKey = kf.generatePrivate(new PKCS8EncodedKeySpec(privateKeyBytes));
 						// println(signUp.pkey.toJson)
-						val pubKey: PublicKey = kf.generatePublic(new X509EncodedKeySpec(signUp.pkey))
-						publicKeys(signUp.id) = pubKey
+						// val pubKey: PublicKey = kf.generatePublic(new X509EncodedKeySpec(signUp.pkey))
+						// publicKeys(signUp.id) = pubKey
 
-						var cipher: Cipher = Cipher.getInstance("RSA")
-						cipher.init(Cipher.DECRYPT_MODE, pubKey)
-						val decryptedBytes = cipher.doFinal(signUp.profile)
-						val profile = (new String(decryptedBytes, "UTF-8")).parseJson.convertTo[Profile]
-						println(profile.toJson)
+						// var cipher: Cipher = Cipher.getInstance("RSA")
+						// cipher.init(Cipher.DECRYPT_MODE, pubKey)
+						// val decryptedBytes = cipher.doFinal(signUp.profile)
+						// val profile = (new String(decryptedBytes, "UTF-8")).parseJson.convertTo[Profile]
+						// println(profile.toJson)
 						server ! AddProfile(signUp.id, signUp)
 						complete {
 							signUp.profile
@@ -271,6 +272,17 @@ object project4 extends App with SimpleRoutingApp{
 				}
 			}~
 			post {
+				path("facebook"/"acceptFriendList") {
+					parameters("userID".as[Int]) { (userID) =>
+						val res = frdRequests(userID).toArray
+						frdRequests(userID).clear()
+						complete {
+							res
+						}
+					}
+				}
+			}~
+			post {
 				path("facebook"/"accessFriend"){
 					entity(as[AccessFriend]) { x =>
 						profilesAccess(x.userID)(x.frdID) = x.bytes
@@ -290,9 +302,25 @@ object project4 extends App with SimpleRoutingApp{
 							}
 						} else {
 							friendLists(userID) += frdID
-							friendLists(frdID) += userID
+							// frdRequests(frdID) += userID
 							// val res = publicKeys(frdID).getEncoded()
-							// print(profiles(frdID).pkey.toJson)
+							complete {
+								profiles(frdID).pkey
+							}
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"acceptFriend") {
+					parameters("userID".as[Int], "frdID".as[Int]) { (userID, frdID) =>
+						// server ! AddFriend(userID, totalUsers)
+						if(friendLists(userID).contains(frdID)){
+							complete {
+								"AlreadyFriend"
+							}
+						} else {
+							friendLists(userID) += frdID
 							complete {
 								profiles(frdID).pkey
 							}

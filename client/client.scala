@@ -40,8 +40,9 @@ object project4 {
 		case class Picture(id: Int, from: Int, text: String, likes: Array[String])
 		case class Album(id: Int, from: Int, pictures: Array[Picture], likes: Array[String])
 		case class Page(id: Int, from: Int, name: String)
-		// case class AccessFriend(userID: Int, frdID: Int, bytes: Array[Byte])
-		case class AccessFriend(userID: Int, frdID: Int, bytes: String)
+		case class AccessFriend(userID: Int, frdID: Int, bytes: Array[Byte])
+		case class AcceptFriend(frdID: Int)
+		// case class AccessFriend(userID: Int, frdID: Int, bytes: String)
 
 		object MyJsonProtocol extends DefaultJsonProtocol {
 			implicit val ProfileFormat = jsonFormat7(Profile)
@@ -160,14 +161,14 @@ object project4 {
 					val profileBytes = profile.getBytes("UTF-8")
 
 					// Encrypt with AES symmetric key
-					// var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
-					// aescipher.init(Cipher.ENCRYPT_MODE, aesKeyProfile)
-					// val bytes = aescipher.doFinal(profileBytes)
+					var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+					aescipher.init(Cipher.ENCRYPT_MODE, aesKeyProfile)
+					val bytes = aescipher.doFinal(profileBytes)
 
 					// Encrypt with RSA private key
-					var cipher: Cipher = Cipher.getInstance("RSA")
-					cipher.init(Cipher.ENCRYPT_MODE, kp.getPrivate())
-					val bytes = cipher.doFinal(profileBytes)
+					// var cipher: Cipher = Cipher.getInstance("RSA")
+					// cipher.init(Cipher.ENCRYPT_MODE, kp.getPrivate())
+					// val bytes = cipher.doFinal(profileBytes)
 
 					val json = SignUp(myID, kp.getPublic().getEncoded(), bytes).toJson.toString
 					// println("profile as json string = "+profile)
@@ -205,8 +206,7 @@ object project4 {
 							// println(profile.toJson)
 
 							// val json = (cipher.doFinal(bytes)).toString.parseJson.convertTo[SignUp]
-							// self ! GetProfile(myID)
-							// self ! "AddFriend"
+							self ! GetProfile(myID)
 							self ! "DoActivity"
 						case Failure(error) =>
 							println(error+"something wrong")
@@ -242,7 +242,7 @@ object project4 {
 						// 	cancelPosts2.cancel()
 						// }
 						// self ! GetPosts(myID)
-						// self ! GetFriendList(myID)
+						self ! GetFriendList(myID)
 						context.parent ! Stat(numOfPosts)
 					}
 
@@ -358,14 +358,47 @@ object project4 {
 					// Encrypt your profile AES secret key with frd's public key
 					var rsaCipher: Cipher = Cipher.getInstance("RSA")
 					rsaCipher.init(Cipher.ENCRYPT_MODE, frdPublicKey)
-					val encryptedString = Base64.encodeBase64String(rsaCipher.doFinal(aesKeyProfile.getEncoded()))
-					// val encryptedString = rsaCipher.doFinal(aesKeyProfile.getEncoded())
+					// val encryptedString = Base64.encodeBase64String(rsaCipher.doFinal(aesKeyProfile.getEncoded()))
+					val encryptedString = rsaCipher.doFinal(aesKeyProfile.getEncoded())
 					// Send the encrypted AES secret key for the server to store
 					val json = AccessFriend(myID, frdID, encryptedString).toJson.toString
 					val responseFuture = pipeline(Post("http://localhost:8080/facebook/accessFriend",HttpEntity(MediaTypes.`application/json`, json)))
 					responseFuture onComplete {
 						case Success(str: HttpResponse) =>
 							println(str.entity.asString)
+						case Failure(error) =>
+							println(error+"something wrong")
+					}
+
+				case "AcceptFrdRequests" =>
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/acceptFriendList?userID="+myID))
+					responseFuture onComplete {
+						case Success(str: HttpResponse) =>
+							var acceptList: Array[Int] = str.entity.asString.parseJson.convertTo[Array[Int]]
+							for(i <- 0 until acceptList.length){
+								self ! AcceptFriend(acceptList(i))
+							}
+							// println(str.entity.asString)
+						case Failure(error) =>
+							println(error+"something wrong")
+					}
+
+				case AcceptFriend(frdID: Int) =>
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/acceptFriend?userID="+myID+"&frdID="+frdID))
+					responseFuture onComplete {
+						case Success(str: HttpResponse) =>
+							// println(str.entity.asString)
+							if(str.entity.asString == "AlreadyFriend"){
+								println("user "+frdID+" is already a friend to user "+myID)
+							} else {
+								println("users "+myID+" and "+frdID+ " became friends!!")
+								var bytes: Array[Byte] = str.entity.asString.parseJson.convertTo[Array[Byte]]
+								// var bytes: Array[Byte] = str.entity.data.toByteArray
+								// println(bytes.toJson)
+								// val kf: KeyFactory = KeyFactory.getInstance("RSA"); // or "EC" or whatever
+								// val frdPublicKey: PublicKey = kf.generatePublic(new X509EncodedKeySpec(bytes))
+								self ! GiveAccessToFriend(frdID, bytes)
+							}
 						case Failure(error) =>
 							println(error+"something wrong")
 					}
