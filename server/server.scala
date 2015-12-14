@@ -25,10 +25,11 @@ object project4 extends App with SimpleRoutingApp{
 		var friendLists = new ArrayBuffer[ListBuffer[Int]]()
 		var profiles = new HashMap[Int, SignUp]()  // store list of class objects
 		var publicKeys = new HashMap[Int, PublicKey]()
-		var profilesAccess = new HashMap[Int, HashMap[Int, Array[Byte]]]() 
+		var accessProfiles = new HashMap[Int, HashMap[Int, String]]() 
 		var albums = new HashMap[Int, HashMap[Int, Album]]()
 		var pages = new HashMap[Int, HashMap[Int, Page]]()
 		var frdRequests = new HashMap[Int, ListBuffer[Int]]()
+		// var frdRequests = new ArrayBuffer[ListBuffer[Int]]()
 
 		case class Init(numOfUsers: Int)
 		case class AddProfile(userID: Int, profile: SignUp)
@@ -44,6 +45,7 @@ object project4 extends App with SimpleRoutingApp{
 		case class Album(id: Int, from: Int, pictures: Array[Picture], likes: Array[String])
 		case class Page(id: Int, from: Int, name: String)
 		case class AccessFriend(userID: Int, frdID: Int, bytes: Array[Byte])
+		case class SendProfile(encAesProfileBytes: String, profileBytes: Array[Byte])
 		// case class AccessFriend(userID: Int, frdID: Int, bytes: String)
 
 		object MyJsonProtocol extends DefaultJsonProtocol {
@@ -53,6 +55,7 @@ object project4 extends App with SimpleRoutingApp{
 			implicit val AlbumFormat = jsonFormat4(Album)
 			implicit val PageFormat = jsonFormat3(Page)
 			implicit val AccessFriendFormat = jsonFormat3(AccessFriend)
+			implicit val SendProfileFormat = jsonFormat2(SendProfile)
 		}
 
 		println("project4 - Facebook Simulator")
@@ -66,7 +69,8 @@ object project4 extends App with SimpleRoutingApp{
 					for(i <- 0 to numOfUsers-1) friendLists += new ListBuffer[Int]
 					for(i <- 0 to numOfUsers-1) posts += new Queue[String]
 					for(i <- 0 to numOfUsers-1) albums(i) = new HashMap[Int,Album]
-					for(i <- 0 to numOfUsers-1) profilesAccess(i) = new HashMap[Int,Array[Byte]]
+					for(i <- 0 to numOfUsers-1) accessProfiles(i) = new HashMap[Int, String]
+					for(i <- 0 to numOfUsers-1) frdRequests(i) = new ListBuffer[Int]
 					for(i <- 0 to numOfUsers-1){ // Create random profiles
 						profiles(i) = SignUp(0, Array[Byte](0), Array[Byte](0))
 					}
@@ -163,9 +167,18 @@ object project4 extends App with SimpleRoutingApp{
 					parameters("userID".as[Int], "getID".as[Int]) { (userID, getID) =>
 						// try catch for java.lang.IndexOutOfBoundsException
 						if(friendLists(userID).contains(getID)){
-							println("Sending profile of user "+getID+" to user "+userID)
-							complete {
-								profiles(getID).profile
+							if(userID == getID){
+								val res = SendProfile("NA", profiles(getID).profile )
+								complete {
+									res
+								}
+							} else {
+								println("Sending profile of user "+getID+" to user "+userID)
+								// val bytes = Base64.decodeBase64(accessProfiles(getID)(userID))
+								val res = SendProfile(accessProfiles(getID)(userID), profiles(getID).profile )
+								complete {
+									res
+								}
 							}
 						} else {
 							println("User "+userID+" is not friend of user "+getID)
@@ -285,7 +298,8 @@ object project4 extends App with SimpleRoutingApp{
 			post {
 				path("facebook"/"accessFriend"){
 					entity(as[AccessFriend]) { x =>
-						profilesAccess(x.userID)(x.frdID) = x.bytes
+						accessProfiles(x.userID)(x.frdID) = Base64.encodeBase64String(x.bytes)
+						// friendLists(x.frdID) += x.userID
 						complete {
 							"ok"
 						}
@@ -301,8 +315,7 @@ object project4 extends App with SimpleRoutingApp{
 								"AlreadyFriend"
 							}
 						} else {
-							friendLists(userID) += frdID
-							// frdRequests(frdID) += userID
+							frdRequests(frdID) += userID
 							// val res = publicKeys(frdID).getEncoded()
 							complete {
 								profiles(frdID).pkey
@@ -321,6 +334,7 @@ object project4 extends App with SimpleRoutingApp{
 							}
 						} else {
 							friendLists(userID) += frdID
+							friendLists(frdID) += userID
 							complete {
 								profiles(frdID).pkey
 							}

@@ -18,6 +18,7 @@ import spray.http.MediaTypes
 import java.security._
 import java.security.spec._
 import javax.crypto._
+import javax.crypto.spec._
 import org.apache.commons.codec.binary.Base64
 
 object project4 {
@@ -34,6 +35,7 @@ object project4 {
 		case class GetFriendList(userID: Int)
 		case class GetPage(userID: Int, pageID: Int)
 		case class GiveAccessToFriend(frdID: Int, bytes: Array[Byte])
+		case class AcceptFriend(frdID: Int)
 
 		case class Profile(id: String, first_name: String, last_name: String, age: String, email: String, gender: String, relation_status: String)
 		case class SignUp(id: Int, pkey: Array[Byte], profile: Array[Byte])
@@ -41,7 +43,7 @@ object project4 {
 		case class Album(id: Int, from: Int, pictures: Array[Picture], likes: Array[String])
 		case class Page(id: Int, from: Int, name: String)
 		case class AccessFriend(userID: Int, frdID: Int, bytes: Array[Byte])
-		case class AcceptFriend(frdID: Int)
+		case class SendProfile(encAesProfileBytes: String, profileBytes: Array[Byte])
 		// case class AccessFriend(userID: Int, frdID: Int, bytes: String)
 
 		object MyJsonProtocol extends DefaultJsonProtocol {
@@ -51,6 +53,7 @@ object project4 {
 			implicit val AlbumFormat = jsonFormat4(Album)
 			implicit val PageFormat = jsonFormat3(Page)
 			implicit val AccessFriendFormat = jsonFormat3(AccessFriend)
+			implicit val SendProfileFormat = jsonFormat2(SendProfile)
 		}
 
 		import MyJsonProtocol._
@@ -120,6 +123,7 @@ object project4 {
 			var cancelGetProfile: Cancellable =_
 			var cancelGetAlbum: Cancellable =_
 			var cancelGetPage: Cancellable =_
+			var cancelAcceptFriend: Cancellable =_
 
 			import system.dispatcher
 			val pipeline = sendReceive
@@ -174,23 +178,6 @@ object project4 {
 					// println("profile as json string = "+profile)
 					// val profile = SignUp(myID, Profile(id, first_name, last_name, 
 					// 				age, email, gender, relation_status))
-
-					// // Encrypt Data
-					// val profileBytes = profile.getBytes("UTF-8")
-					// var cipher: Cipher = Cipher.getInstance("RSA")
-					// cipher.init(Cipher.ENCRYPT_MODE, kp.getPublic())
-					// val json = (cipher.doFinal(profileBytes)).toJson.toString
-
-					// val responseFuture = pipeline(Post("http://localhost:8080/facebook/AddProfile?userID="+myID+"&profile="+cipherData))
-					// responseFuture onComplete {
-					// 	case Success(str: HttpResponse) =>
-					// 		println(str.entity.asString)
-					// 		str.entity.asString.parseJson.convertTo[Array[Byte]]
-					// 		// self ! GetProfile(myID)
-					// 		// self ! "DoActivity"
-					// 	case Failure(error) =>
-					// 		println(error+"something wrong")
-					// }
 					
 					val responseFuture = pipeline(Post("http://localhost:8080/facebook/addProfile",HttpEntity(MediaTypes.`application/json`, json)))
 					responseFuture onComplete {
@@ -216,11 +203,12 @@ object project4 {
 					system.scheduler.scheduleOnce(simulationTime milliseconds, self, "StopActivity")
 					// cancelStop = system.scheduler.schedule(0 milliseconds,100 milliseconds,self,"Stop")
 					
-					cancelAddFriend = system.scheduler.schedule(4000 milliseconds,3000 milliseconds,self,"AddFriend")
+					cancelAddFriend = system.scheduler.schedule(2000 milliseconds,4000 milliseconds,self,"AddFriend")
+					cancelAcceptFriend = system.scheduler.schedule(3000 milliseconds,4000 milliseconds,self,"AcceptFrdRequests")
 					// cancelAddAlbum = system.scheduler.schedule(0 milliseconds,8000 milliseconds,self,"AddAlbum")
 					// cancelAddPage = system.scheduler.schedule(90 milliseconds,7000 milliseconds,self,"AddPage")
 					// cancelGetAlbum = system.scheduler.schedule(30 milliseconds,3000 milliseconds,self,GetAlbum(myID, 0))
-					// cancelGetProfile = system.scheduler.schedule(60 milliseconds,6000 milliseconds,self,GetProfile(Random.nextInt(numOfUsers)))
+					cancelGetProfile = system.scheduler.schedule(4000 milliseconds, 3000 milliseconds,self,GetProfile(Random.nextInt(numOfUsers)))
 					// if(myID % 2 == 0 ){
 					// 	cancelPosts1 = system.scheduler.schedule(150 milliseconds,2000 milliseconds,self,"Post")
 					// } else {
@@ -232,9 +220,10 @@ object project4 {
 						// println("Shutting down the system!!")
 						// cancelStop.cancel()
 						cancelAddFriend.cancel()
+						cancelAcceptFriend.cancel()
 						// cancelAddAlbum.cancel()
 						// cancelAddPage.cancel()
-						// cancelGetProfile.cancel()
+						cancelGetProfile.cancel()
 						// cancelGetAlbum.cancel()
 						// if(myID % 2 == 0 ){
 						// 	cancelPosts1.cancel()
@@ -254,13 +243,32 @@ object project4 {
 							if(str.entity.asString == "PermissionDenied"){
 								println("PermissionDenied for user "+myID+" to access profile of "+getID)
 							} else {
-								var bytes: Array[Byte] = str.entity.asString.parseJson.convertTo[Array[Byte]]
-								// Decrypt Data
-								var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
-								aescipher.init(Cipher.DECRYPT_MODE, aesKeyProfile)
-								val decryptedBytes = aescipher.doFinal(bytes)
-								val profile = (new String(decryptedBytes, "UTF-8")).parseJson.convertTo[Profile]
-								println(profile.toJson)
+								if(getID == myID){
+									var data: SendProfile = str.entity.asString.parseJson.convertTo[SendProfile]
+
+									// Decrypt Data
+									var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+									aescipher.init(Cipher.DECRYPT_MODE, aesKeyProfile)
+									val decryptedBytes = aescipher.doFinal(data.profileBytes)
+									val profile = (new String(decryptedBytes, "UTF-8")).parseJson.convertTo[Profile]
+									println(profile.toJson)
+								} else {
+									var data: SendProfile = str.entity.asString.parseJson.convertTo[SendProfile]
+
+									// First decrypt with your private key to get AES secret key
+									var cipher: Cipher = Cipher.getInstance("RSA")
+									cipher.init(Cipher.DECRYPT_MODE, kp.getPrivate())
+									val encAesProfileBytes = Base64.decodeBase64(data.encAesProfileBytes)
+									val bytes = cipher.doFinal(encAesProfileBytes)
+
+									// Decrypt Data
+									val aeskeySpec: SecretKeySpec = new SecretKeySpec(bytes, "AES")
+									var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+									aescipher.init(Cipher.DECRYPT_MODE, aeskeySpec)
+									val decryptedBytes = aescipher.doFinal(data.profileBytes)
+									val profile = (new String(decryptedBytes, "UTF-8")).parseJson.convertTo[Profile]
+									println(profile.toJson)
+								}
 							}
 						case Failure(error) =>
 							println(error+"something wrong")
