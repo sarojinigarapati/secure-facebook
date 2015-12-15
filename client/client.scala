@@ -36,14 +36,17 @@ object project4 {
 		case class GetPage(userID: Int, pageID: Int)
 		case class GiveAccessToFriend(frdID: Int, bytes: Array[Byte])
 		case class AcceptFriend(frdID: Int)
+		case class PictureAccess(frdList: Array[Int], frdPubKeys: Array[String])
 
 		case class Profile(id: String, first_name: String, last_name: String, age: String, email: String, gender: String, relation_status: String)
 		case class SignUp(id: Int, pkey: Array[Byte], profile: Array[Byte])
+		case class Pic(id: Int, from: Int, data: Array[Byte], picAcl: Array[Int], picAesKeys: Array[String])
+		case class PicFrdList(frdList: Array[Int], frdPubKeys: Array[String])
 		case class Picture(id: Int, from: Int, text: String, likes: Array[String])
 		case class Album(id: Int, from: Int, pictures: Array[Picture], likes: Array[String])
 		case class Page(id: Int, from: Int, name: String)
 		case class AccessFriend(userID: Int, frdID: Int, bytes: Array[Byte])
-		case class SendProfile(encAesProfileBytes: String, profileBytes: Array[Byte])
+		case class SendProfile(profileAesKey: String, profileBytes: Array[Byte])
 		// case class AccessFriend(userID: Int, frdID: Int, bytes: String)
 
 		object MyJsonProtocol extends DefaultJsonProtocol {
@@ -54,6 +57,8 @@ object project4 {
 			implicit val PageFormat = jsonFormat3(Page)
 			implicit val AccessFriendFormat = jsonFormat3(AccessFriend)
 			implicit val SendProfileFormat = jsonFormat2(SendProfile)
+			implicit val PicFormat = jsonFormat5(Pic)
+			implicit val PicFrdListFormat = jsonFormat2(PicFrdList)
 		}
 
 		import MyJsonProtocol._
@@ -112,7 +117,9 @@ object project4 {
 			// var kpg: KeyPairGenerator =_
 			var kp: KeyPair =_
 			var aesKeyProfile: SecretKey =_
+			var photoAesKeys: ArrayBuffer[SecretKey] =_
 			var numOfPosts: Int =_
+			var numOfPics: Int = 0
 			var numOfAlbums: Int =_
 			// var cancels = new ListBuffer[Cancellable]()
 			var cancelPosts1: Cancellable =_
@@ -258,8 +265,8 @@ object project4 {
 									// First decrypt with your private key to get AES secret key
 									var cipher: Cipher = Cipher.getInstance("RSA")
 									cipher.init(Cipher.DECRYPT_MODE, kp.getPrivate())
-									val encAesProfileBytes = Base64.decodeBase64(data.encAesProfileBytes)
-									val bytes = cipher.doFinal(encAesProfileBytes)
+									val profileAesKey = Base64.decodeBase64(data.profileAesKey)
+									val bytes = cipher.doFinal(profileAesKey)
 
 									// Decrypt Data
 									val aeskeySpec: SecretKeySpec = new SecretKeySpec(bytes, "AES")
@@ -270,66 +277,6 @@ object project4 {
 									println(profile.toJson)
 								}
 							}
-						case Failure(error) =>
-							println(error+"something wrong")
-					}
-
-				case GetPage(userID: Int, pageID: Int) =>
-					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getPage?userID="+userID+"&pageID="+pageID))
-					responseFuture onComplete {
-						case Success(str: HttpResponse) =>
-							val page = str.entity.asString.parseJson.convertTo[Page]
-							println("user "+myID+" received page of "+userID+"\n"+
-								"\npageID "+page.id+
-								"\nname "+page.name)
-						case Failure(error) =>
-							println(error+"something wrong")
-					}
-
-				case GetPosts(userID: Int) =>
-					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getPage?userID="+userID))
-					responseFuture onComplete {
-						case Success(str: HttpResponse) =>
-							println("user "+myID+" received posts of "+userID+"\n"+
-								str.entity.asString)
-						case Failure(error) =>
-							println(error+"something wrong")
-					}
-
-				case GetFriendList(userID: Int) =>
-					// println("Asking for friend list")
-					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getFriendList?userID="+userID))
-					responseFuture onComplete {
-						case Success(str: HttpResponse) =>
-							var frdListArray: Array[Int] = str.entity.asString.parseJson.convertTo[Array[Int]]
-							println(frdListArray.toJson)
-							// println("user "+myID+" received friend list of "+userID+"\n"+
-							// 	str.entity.asString)
-						case Failure(error) =>
-							println(error+"something wrong")
-					}
-
-				case GetAlbum(userID: Int, albumID: Int) =>
-					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getAlbum?userID="+userID+"&albumID="+albumID))
-					responseFuture onComplete {
-						case Success(str: HttpResponse) =>
-							val album = str.entity.asString.parseJson.convertTo[Album]
-							println("user "+myID+" received album of "+userID+
-								"\nalbumID "+album.id+
-								"\nlikes "+album.likes.mkString(","))
-						case Failure(error) =>
-							println(error+"something wrong")
-					}
-
-				case "Post" =>
-					var text: String = Random.alphanumeric.take(10).mkString
-					// var text: String = "Post by user "+myID
-					val responseFuture = pipeline(Post("http://localhost:8080/facebook/post?userID="+myID+"&text="+text))
-					responseFuture onComplete {
-						case Success(str: HttpResponse) =>
-							// println("User "+myID+" successfully posted "+numOfPosts+1)
-							numOfPosts = numOfPosts + 1
-							// println(str.entity.asString)
 						case Failure(error) =>
 							println(error+"something wrong")
 					}
@@ -407,6 +354,115 @@ object project4 {
 								// val frdPublicKey: PublicKey = kf.generatePublic(new X509EncodedKeySpec(bytes))
 								self ! GiveAccessToFriend(frdID, bytes)
 							}
+						case Failure(error) =>
+							println(error+"something wrong")
+					}
+
+				case "AddPicture" =>
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/initPicture?userID="+myID))
+					responseFuture onComplete {
+						case Success(str: HttpResponse) =>
+							var picFrdList: PicFrdList = str.entity.asString.parseJson.convertTo[PicFrdList]
+							self ! PictureAccess(picFrdList.frdList, picFrdList.frdPubKeys)
+						case Failure(error) =>
+							println(error+"something wrong")
+					}
+
+				case PictureAccess(frdList: Array[Int], frdPubKeys: Array[String]) =>
+					// Generate AES secret key
+					val kgen: KeyGenerator = KeyGenerator.getInstance("AES")
+				    kgen.init(128)
+				    photoAesKeys += kgen.generateKey()
+					// Create a picture and encrypt it
+					var text: String = "Picture-"+numOfPics.toString
+					var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+					aescipher.init(Cipher.ENCRYPT_MODE, photoAesKeys(numOfPics))
+					val data = aescipher.doFinal(text.getBytes("UTF-8"))
+					// Create a list of encrypted keys who can access the picture
+					var picAcl: ArrayBuffer[Int] = ArrayBuffer[Int]()
+					var picAesKeys: ArrayBuffer[String] = ArrayBuffer[String]()
+					for(i <- 0 until frdList.length){
+						if(Random.nextInt(100) < 50){
+							picAcl += frdList(i)
+							var bytes: Array[Byte] = Base64.decodeBase64(frdPubKeys(i))
+
+							// Generate the friends public key
+							val kf: KeyFactory = KeyFactory.getInstance("RSA"); // or "EC" or whatever
+							val frdPublicKey: PublicKey = kf.generatePublic(new X509EncodedKeySpec(bytes))
+
+							// Encrypt your profile AES secret key with frd's public key
+							var rsaCipher: Cipher = Cipher.getInstance("RSA")
+							rsaCipher.init(Cipher.ENCRYPT_MODE, frdPublicKey)
+							picAesKeys += Base64.encodeBase64String(rsaCipher.doFinal(aesKeyProfile.getEncoded()))
+						}
+					}
+					// Send it to the server for storing
+					val json = Pic(numOfPics, myID, data, picAcl.toArray, picAesKeys.toArray).toJson.toString
+					numOfPics = numOfPics + 1
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/addPicture",HttpEntity(MediaTypes.`application/json`, json)))
+					responseFuture onComplete {
+						case Success(str: HttpResponse) =>
+							// println(str.entity.asString)
+						case Failure(error) =>
+							println(error+"something wrong")
+					}
+
+				case GetPage(userID: Int, pageID: Int) =>
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getPage?userID="+userID+"&pageID="+pageID))
+					responseFuture onComplete {
+						case Success(str: HttpResponse) =>
+							val page = str.entity.asString.parseJson.convertTo[Page]
+							println("user "+myID+" received page of "+userID+"\n"+
+								"\npageID "+page.id+
+								"\nname "+page.name)
+						case Failure(error) =>
+							println(error+"something wrong")
+					}
+
+				case GetPosts(userID: Int) =>
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getPage?userID="+userID))
+					responseFuture onComplete {
+						case Success(str: HttpResponse) =>
+							println("user "+myID+" received posts of "+userID+"\n"+
+								str.entity.asString)
+						case Failure(error) =>
+							println(error+"something wrong")
+					}
+
+				case GetFriendList(userID: Int) =>
+					// println("Asking for friend list")
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getFriendList?userID="+userID))
+					responseFuture onComplete {
+						case Success(str: HttpResponse) =>
+							var frdListArray: Array[Int] = str.entity.asString.parseJson.convertTo[Array[Int]]
+							println(frdListArray.toJson)
+							// println("user "+myID+" received friend list of "+userID+"\n"+
+							// 	str.entity.asString)
+						case Failure(error) =>
+							println(error+"something wrong")
+					}
+
+				case GetAlbum(userID: Int, albumID: Int) =>
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getAlbum?userID="+userID+"&albumID="+albumID))
+					responseFuture onComplete {
+						case Success(str: HttpResponse) =>
+							val album = str.entity.asString.parseJson.convertTo[Album]
+							println("user "+myID+" received album of "+userID+
+								"\nalbumID "+album.id+
+								"\nlikes "+album.likes.mkString(","))
+						case Failure(error) =>
+							println(error+"something wrong")
+					}
+
+				case "Post" =>
+					var text: String = Random.alphanumeric.take(10).mkString
+					// var text: String = "Post by user "+myID
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/post?userID="+myID+"&text="+text))
+					responseFuture onComplete {
+						case Success(str: HttpResponse) =>
+							// println("User "+myID+" successfully posted "+numOfPosts+1)
+							numOfPosts = numOfPosts + 1
+							// println(str.entity.asString)
 						case Failure(error) =>
 							println(error+"something wrong")
 					}
