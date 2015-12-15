@@ -42,14 +42,14 @@ object project4 extends App with SimpleRoutingApp{
 
 		case class Profile(id: String, first_name: String, last_name: String, age: String, email: String, gender: String, relation_status: String)
 		case class SignUp(id: Int, pkey: Array[Byte], profile: Array[Byte])
-		case class Pic(id: Int, from: Int, data: Array[Byte], picAcl: Array[Int], picAesKeys: Array[String])
-		case class PicFrdList(frdList: Array[Int], frdPubKeys: Array[String])
+		case class Pic(id: Int, from: Int, data: Array[Byte], picAcl: Array[Int], picAesKeys: Array[Array[Byte]])
+		case class PicFrdList(frdList: Array[Int], frdPubKeys: Array[Array[Byte]])
 		case class Picture(id: Int, from: Int, text: String, likes: Array[String])
 		case class Album(id: Int, from: Int, pictures: Array[Picture], likes: Array[String])
 		case class Page(id: Int, from: Int, name: String)
 		case class AccessFriend(userID: Int, frdID: Int, bytes: Array[Byte])
 		case class SendProfile(profileAesKey: String, profileBytes: Array[Byte])
-		case class SendPic(picAesKey: String, data: Array[Byte])
+		case class SendPic(picAesKey: Array[Byte], data: Array[Byte])
 		// case class AccessFriend(userID: Int, frdID: Int, bytes: String)
 
 		object MyJsonProtocol extends DefaultJsonProtocol {
@@ -132,10 +132,11 @@ object project4 extends App with SimpleRoutingApp{
 					parameters("userID".as[Int]) { (userID) =>
 						println("Adding a picture for user "+userID)
 						var frdList: Array[Int] = friendLists(userID).toArray
-						var frdPubKeys: ArrayBuffer[String] = ArrayBuffer[String]()
+						var frdPubKeys: ArrayBuffer[Array[Byte]] = ArrayBuffer[Array[Byte]]()
 						for(i <- 0 until frdList.length){
-							var bytes: Array[Byte] = profiles(userID).pkey 
-							frdPubKeys += Base64.encodeBase64String(bytes)
+							// var bytes: Array[Byte] = profiles(userID).pkey 
+							// frdPubKeys += Base64.encodeBase64String(bytes)
+							frdPubKeys += profiles(userID).pkey 
 						}
 						val res = PicFrdList(frdList,frdPubKeys.toArray)
 						complete {

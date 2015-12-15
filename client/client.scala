@@ -37,18 +37,19 @@ object project4 {
 		case class GetPage(userID: Int, pageID: Int)
 		case class GiveAccessToFriend(frdID: Int, bytes: Array[Byte])
 		case class AcceptFriend(frdID: Int)
-		case class PictureAccess(frdList: Array[Int], frdPubKeys: Array[String])
+		case class PictureAccess(frdList: Array[Int], frdPubKeys: Array[Array[Byte]])
 
 		case class Profile(id: String, first_name: String, last_name: String, age: String, email: String, gender: String, relation_status: String)
 		case class SignUp(id: Int, pkey: Array[Byte], profile: Array[Byte])
-		case class Pic(id: Int, from: Int, data: Array[Byte], picAcl: Array[Int], picAesKeys: Array[String])
-		case class PicFrdList(frdList: Array[Int], frdPubKeys: Array[String])
+		case class Pic(id: Int, from: Int, data: Array[Byte], picAcl: Array[Int], picAesKeys: Array[Array[Byte]])
+		// case class PicFrdList(frdList: Array[Int], frdPubKeys: Array[String])
+		case class PicFrdList(frdList: Array[Int], frdPubKeys: Array[Array[Byte]])
 		case class Picture(id: Int, from: Int, text: String, likes: Array[String])
 		case class Album(id: Int, from: Int, pictures: Array[Picture], likes: Array[String])
 		case class Page(id: Int, from: Int, name: String)
 		case class AccessFriend(userID: Int, frdID: Int, bytes: Array[Byte])
 		case class SendProfile(profileAesKey: String, profileBytes: Array[Byte])
-		case class SendPic(picAesKey: String, data: Array[Byte])
+		case class SendPic(picAesKey: Array[Byte], data: Array[Byte])
 		// case class AccessFriend(userID: Int, frdID: Int, bytes: String)
 
 		object MyJsonProtocol extends DefaultJsonProtocol {
@@ -206,9 +207,10 @@ object project4 {
 					
 					cancels += system.scheduler.schedule(2000 milliseconds,4000 milliseconds,self,"AddFriend")
 					cancels += system.scheduler.schedule(3000 milliseconds,4000 milliseconds,self,"AcceptFrdRequests")
-					cancels += system.scheduler.schedule(3500 milliseconds,5000 milliseconds,self,"AddPicture")
+					cancels += system.scheduler.schedule(3000 milliseconds,5000 milliseconds,self,"AddPicture")
 					cancels += system.scheduler.schedule(4000 milliseconds,3000 milliseconds,self,GetProfile(Random.nextInt(numOfUsers)))
-					cancels += system.scheduler.schedule(4000 milliseconds,8000 milliseconds,self,GetPicture(myID,Random.nextInt(5)))
+					cancels += system.scheduler.schedule(3500 milliseconds,5000 milliseconds,self,GetPicture(Random.nextInt(numOfUsers),Random.nextInt(5)))
+					// cancels += system.scheduler.schedule(3500 milliseconds,5000 milliseconds,self,GetPicture(myID,Random.nextInt(5)))
 					// cancels += system.scheduler.schedule(0 milliseconds,8000 milliseconds,self,"AddAlbum")
 					// cancels += system.scheduler.schedule(90 milliseconds,7000 milliseconds,self,"AddPage")
 					// cancels += system.scheduler.schedule(30 milliseconds,3000 milliseconds,self,GetAlbum(myID, 0))
@@ -250,12 +252,15 @@ object project4 {
 
 									// First decrypt with your private key to get AES secret key
 									var cipher: Cipher = Cipher.getInstance("RSA")
-									cipher.init(Cipher.DECRYPT_MODE, kp.getPrivate())
+									// cipher.init(Cipher.DECRYPT_MODE, kp.getPrivate())
+									// val profileAesKey = Base64.decodeBase64(data.profileAesKey)
+									// val bytes = cipher.doFinal(profileAesKey)
+									// val aeskeySpec: SecretKeySpec = new SecretKeySpec(bytes, "AES")
+									cipher.init(Cipher.UNWRAP_MODE, kp.getPrivate())
 									val profileAesKey = Base64.decodeBase64(data.profileAesKey)
-									val bytes = cipher.doFinal(profileAesKey)
+									val aeskeySpec = (cipher.unwrap(profileAesKey,"AES",Cipher.SECRET_KEY))
 
 									// Decrypt Data
-									val aeskeySpec: SecretKeySpec = new SecretKeySpec(bytes, "AES")
 									var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
 									aescipher.init(Cipher.DECRYPT_MODE, aeskeySpec)
 									val decryptedBytes = aescipher.doFinal(data.profileBytes)
@@ -298,9 +303,11 @@ object project4 {
 
 					// Encrypt your profile AES secret key with frd's public key
 					var rsaCipher: Cipher = Cipher.getInstance("RSA")
-					rsaCipher.init(Cipher.ENCRYPT_MODE, frdPublicKey)
+					// rsaCipher.init(Cipher.ENCRYPT_MODE, frdPublicKey)
+					rsaCipher.init(Cipher.WRAP_MODE, frdPublicKey)
 					// val encryptedString = Base64.encodeBase64String(rsaCipher.doFinal(aesKeyProfile.getEncoded()))
-					val encryptedString = rsaCipher.doFinal(aesKeyProfile.getEncoded())
+					// val encryptedString = rsaCipher.doFinal(aesKeyProfile.getEncoded())
+					val encryptedString = rsaCipher.wrap(aesKeyProfile)
 					// Send the encrypted AES secret key for the server to store
 					val json = AccessFriend(myID, frdID, encryptedString).toJson.toString
 					val responseFuture = pipeline(Post("http://localhost:8080/facebook/accessFriend",HttpEntity(MediaTypes.`application/json`, json)))
@@ -354,7 +361,7 @@ object project4 {
 							println(error+"something wrong")
 					}
 
-				case PictureAccess(frdList: Array[Int], frdPubKeys: Array[String]) =>
+				case PictureAccess(frdList: Array[Int], frdPubKeys: Array[Array[Byte]]) =>
 					// Generate AES secret key
 					val kgen: KeyGenerator = KeyGenerator.getInstance("AES")
 				    kgen.init(128)
@@ -366,26 +373,32 @@ object project4 {
 					val data = aescipher.doFinal(text.getBytes("UTF-8"))
 					// Create a list of encrypted keys who can access the picture
 					var picAcl: ArrayBuffer[Int] = ArrayBuffer[Int]()
-					var picAesKeys: ArrayBuffer[String] = ArrayBuffer[String]()
+					var picAesKeys: ArrayBuffer[Array[Byte]] = ArrayBuffer[Array[Byte]]()
 					for(i <- 0 until frdList.length){
-						if(Random.nextInt(100) < 50){
+						// if(Random.nextInt(100) < 50){
 							picAcl += frdList(i)
-							var bytes: Array[Byte] = Base64.decodeBase64(frdPubKeys(i))
+							// var bytes: Array[Byte] = Base64.decodeBase64(frdPubKeys(i))
 
 							// Generate the friends public key
 							val kf: KeyFactory = KeyFactory.getInstance("RSA"); // or "EC" or whatever
-							val frdPublicKey: PublicKey = kf.generatePublic(new X509EncodedKeySpec(bytes))
+							val frdPublicKey: PublicKey = kf.generatePublic(new X509EncodedKeySpec(frdPubKeys(i)))
 
 							// Encrypt your profile AES secret key with frd's public key
 							var rsaCipher: Cipher = Cipher.getInstance("RSA")
-							rsaCipher.init(Cipher.ENCRYPT_MODE, frdPublicKey)
-							picAesKeys += Base64.encodeBase64String(rsaCipher.doFinal(photoAesKeys(numOfPics).getEncoded()))
-						}
+							// rsaCipher.init(Cipher.ENCRYPT_MODE, frdPublicKey)
+							// picAesKeys += Base64.encodeBase64String(rsaCipher.doFinal(photoAesKeys(numOfPics).getEncoded()))
+
+							rsaCipher.init(Cipher.WRAP_MODE, frdPublicKey)
+							picAesKeys += (rsaCipher.wrap(photoAesKeys(numOfPics)))
+						// }
 					}
-					picAcl += myID
-					var rsaCipher: Cipher = Cipher.getInstance("RSA")
-					rsaCipher.init(Cipher.ENCRYPT_MODE, kp.getPublic())
-					picAesKeys += Base64.encodeBase64String(rsaCipher.doFinal(photoAesKeys(numOfPics).getEncoded()))
+					// picAcl += myID
+					// var rsaCipher: Cipher = Cipher.getInstance("RSA")
+					// // rsaCipher.init(Cipher.ENCRYPT_MODE, kp.getPublic())
+					// // picAesKeys += Base64.encodeBase64String(rsaCipher.doFinal(photoAesKeys(numOfPics).getEncoded()))
+
+					// rsaCipher.init(Cipher.WRAP_MODE, kp.getPublic())
+					// picAesKeys += (rsaCipher.wrap(photoAesKeys(numOfPics)))
 
 					// Send it to the server for storing
 					val json = Pic(numOfPics, myID, data, picAcl.toArray, picAesKeys.toArray).toJson.toString
@@ -421,10 +434,14 @@ object project4 {
 
 								// First decrypt with your private key to get AES secret key
 								var cipher: Cipher = Cipher.getInstance("RSA")
-								cipher.init(Cipher.DECRYPT_MODE, kp.getPrivate())
-								val aesKey = Base64.decodeBase64(sendPic.picAesKey)
-								val bytes = cipher.doFinal(aesKey)
-								val aeskeySpec: SecretKeySpec = new SecretKeySpec(bytes, "AES")
+								// cipher.init(Cipher.DECRYPT_MODE, kp.getPrivate())
+								// val aesKey = Base64.decodeBase64(sendPic.picAesKey)
+								// val bytes = cipher.doFinal(aesKey)
+								// val aeskeySpec: SecretKeySpec = new SecretKeySpec(bytes, "AES")
+
+								cipher.init(Cipher.UNWRAP_MODE, kp.getPrivate())
+								// val aesKey = Base64.decodeBase64(sendPic.picAesKey)
+								val aeskeySpec = (cipher.unwrap(sendPic.picAesKey,"AES",Cipher.SECRET_KEY))
 
 								// Decrypt Data
 								var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
