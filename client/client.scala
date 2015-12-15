@@ -30,6 +30,7 @@ object project4 {
 
 		case class Stat(userPosts: Int)
 		case class GetProfile(userID: Int)
+		case class GetPicture(userID: Int, picID: Int)
 		case class GetAlbum(userID: Int, albumID: Int)
 		case class GetPosts(userID: Int)
 		case class GetFriendList(userID: Int)
@@ -47,6 +48,7 @@ object project4 {
 		case class Page(id: Int, from: Int, name: String)
 		case class AccessFriend(userID: Int, frdID: Int, bytes: Array[Byte])
 		case class SendProfile(profileAesKey: String, profileBytes: Array[Byte])
+		case class SendPic(picAesKey: String, data: Array[Byte])
 		// case class AccessFriend(userID: Int, frdID: Int, bytes: String)
 
 		object MyJsonProtocol extends DefaultJsonProtocol {
@@ -59,6 +61,7 @@ object project4 {
 			implicit val SendProfileFormat = jsonFormat2(SendProfile)
 			implicit val PicFormat = jsonFormat5(Pic)
 			implicit val PicFrdListFormat = jsonFormat2(PicFrdList)
+			implicit val SendPicFormat = jsonFormat2(SendPic)
 		}
 
 		import MyJsonProtocol._
@@ -117,20 +120,11 @@ object project4 {
 			// var kpg: KeyPairGenerator =_
 			var kp: KeyPair =_
 			var aesKeyProfile: SecretKey =_
-			var photoAesKeys: ArrayBuffer[SecretKey] =_
+			var photoAesKeys: ArrayBuffer[SecretKey] = new ArrayBuffer[SecretKey]()
 			var numOfPosts: Int =_
 			var numOfPics: Int = 0
 			var numOfAlbums: Int =_
-			// var cancels = new ListBuffer[Cancellable]()
-			var cancelPosts1: Cancellable =_
-			var cancelPosts2: Cancellable =_
-			var cancelAddFriend: Cancellable =_
-			var cancelAddAlbum: Cancellable =_
-			var cancelAddPage: Cancellable =_
-			var cancelGetProfile: Cancellable =_
-			var cancelGetAlbum: Cancellable =_
-			var cancelGetPage: Cancellable =_
-			var cancelAcceptFriend: Cancellable =_
+			var cancels: ArrayBuffer[Cancellable] = new ArrayBuffer[Cancellable]()
 
 			import system.dispatcher
 			val pipeline = sendReceive
@@ -210,34 +204,26 @@ object project4 {
 					system.scheduler.scheduleOnce(simulationTime milliseconds, self, "StopActivity")
 					// cancelStop = system.scheduler.schedule(0 milliseconds,100 milliseconds,self,"Stop")
 					
-					cancelAddFriend = system.scheduler.schedule(2000 milliseconds,4000 milliseconds,self,"AddFriend")
-					cancelAcceptFriend = system.scheduler.schedule(3000 milliseconds,4000 milliseconds,self,"AcceptFrdRequests")
-					// cancelAddAlbum = system.scheduler.schedule(0 milliseconds,8000 milliseconds,self,"AddAlbum")
-					// cancelAddPage = system.scheduler.schedule(90 milliseconds,7000 milliseconds,self,"AddPage")
-					// cancelGetAlbum = system.scheduler.schedule(30 milliseconds,3000 milliseconds,self,GetAlbum(myID, 0))
-					cancelGetProfile = system.scheduler.schedule(4000 milliseconds, 3000 milliseconds,self,GetProfile(Random.nextInt(numOfUsers)))
+					cancels += system.scheduler.schedule(2000 milliseconds,4000 milliseconds,self,"AddFriend")
+					cancels += system.scheduler.schedule(3000 milliseconds,4000 milliseconds,self,"AcceptFrdRequests")
+					cancels += system.scheduler.schedule(3500 milliseconds,5000 milliseconds,self,"AddPicture")
+					cancels += system.scheduler.schedule(4000 milliseconds,3000 milliseconds,self,GetProfile(Random.nextInt(numOfUsers)))
+					cancels += system.scheduler.schedule(4000 milliseconds,8000 milliseconds,self,GetPicture(myID,Random.nextInt(5)))
+					// cancels += system.scheduler.schedule(0 milliseconds,8000 milliseconds,self,"AddAlbum")
+					// cancels += system.scheduler.schedule(90 milliseconds,7000 milliseconds,self,"AddPage")
+					// cancels += system.scheduler.schedule(30 milliseconds,3000 milliseconds,self,GetAlbum(myID, 0))
 					// if(myID % 2 == 0 ){
-					// 	cancelPosts1 = system.scheduler.schedule(150 milliseconds,2000 milliseconds,self,"Post")
+					// 	cancels += system.scheduler.schedule(150 milliseconds,2000 milliseconds,self,"Post")
 					// } else {
-					// 	cancelPosts2 = system.scheduler.schedule(180 milliseconds,4000 milliseconds,self,"Post")
+					// 	cancels += system.scheduler.schedule(180 milliseconds,4000 milliseconds,self,"Post")
 					// }
 
 				case "StopActivity" =>
 					if(System.currentTimeMillis - start > simulationTime){ // in milliseconds
 						// println("Shutting down the system!!")
-						// cancelStop.cancel()
-						cancelAddFriend.cancel()
-						cancelAcceptFriend.cancel()
-						// cancelAddAlbum.cancel()
-						// cancelAddPage.cancel()
-						cancelGetProfile.cancel()
-						// cancelGetAlbum.cancel()
-						// if(myID % 2 == 0 ){
-						// 	cancelPosts1.cancel()
-						// } else {
-						// 	cancelPosts2.cancel()
-						// }
-						// self ! GetPosts(myID)
+						for(i <- 0 until cancels.length){
+							cancels(i).cancel()
+						}
 						self ! GetFriendList(myID)
 						context.parent ! Stat(numOfPosts)
 					}
@@ -393,9 +379,14 @@ object project4 {
 							// Encrypt your profile AES secret key with frd's public key
 							var rsaCipher: Cipher = Cipher.getInstance("RSA")
 							rsaCipher.init(Cipher.ENCRYPT_MODE, frdPublicKey)
-							picAesKeys += Base64.encodeBase64String(rsaCipher.doFinal(aesKeyProfile.getEncoded()))
+							picAesKeys += Base64.encodeBase64String(rsaCipher.doFinal(photoAesKeys(numOfPics).getEncoded()))
 						}
 					}
+					picAcl += myID
+					var rsaCipher: Cipher = Cipher.getInstance("RSA")
+					rsaCipher.init(Cipher.ENCRYPT_MODE, kp.getPublic())
+					picAesKeys += Base64.encodeBase64String(rsaCipher.doFinal(photoAesKeys(numOfPics).getEncoded()))
+
 					// Send it to the server for storing
 					val json = Pic(numOfPics, myID, data, picAcl.toArray, picAesKeys.toArray).toJson.toString
 					numOfPics = numOfPics + 1
@@ -403,6 +394,45 @@ object project4 {
 					responseFuture onComplete {
 						case Success(str: HttpResponse) =>
 							// println(str.entity.asString)
+						case Failure(error) =>
+							println(error+"something wrong")
+					}
+
+				case GetPicture(userID: Int, picID: Int) =>
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getPicture?userID="+myID+"&frdID="+userID+"&picID="+picID))
+					responseFuture onComplete {
+						case Success(str: HttpResponse) =>
+							if(str.entity.asString == "PermissionDenied"){
+								println("PermissionDenied for user "+myID+" to access picture "+picID+" of user "+userID)
+							} else if(str.entity.asString == "PictureNotFound"){
+								println("No picture "+picID+" of user "+userID+" exists!!")
+							// } else if(userID == myID) {
+							// 	var sendPic: SendPic = str.entity.asString.parseJson.convertTo[SendPic]
+
+							// 	// Decrypt Data
+							// 	var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+							// 	aescipher.init(Cipher.DECRYPT_MODE, photoAesKeys(picID))
+							// 	val decryptedBytes = aescipher.doFinal(sendPic.data)
+							// 	val pic = (new String(decryptedBytes, "UTF-8"))
+							// 	println(pic)
+							} else {
+								println("Getting picture "+picID+" of user "+userID+" for user "+myID)
+								var sendPic: SendPic = str.entity.asString.parseJson.convertTo[SendPic]
+
+								// First decrypt with your private key to get AES secret key
+								var cipher: Cipher = Cipher.getInstance("RSA")
+								cipher.init(Cipher.DECRYPT_MODE, kp.getPrivate())
+								val aesKey = Base64.decodeBase64(sendPic.picAesKey)
+								val bytes = cipher.doFinal(aesKey)
+								val aeskeySpec: SecretKeySpec = new SecretKeySpec(bytes, "AES")
+
+								// Decrypt Data
+								var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+								aescipher.init(Cipher.DECRYPT_MODE, aeskeySpec)
+								val decryptedBytes = aescipher.doFinal(sendPic.data)
+								val pic = (new String(decryptedBytes, "UTF-8"))
+								println(pic)
+							}
 						case Failure(error) =>
 							println(error+"something wrong")
 					}

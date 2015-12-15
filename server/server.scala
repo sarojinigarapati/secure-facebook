@@ -49,6 +49,7 @@ object project4 extends App with SimpleRoutingApp{
 		case class Page(id: Int, from: Int, name: String)
 		case class AccessFriend(userID: Int, frdID: Int, bytes: Array[Byte])
 		case class SendProfile(profileAesKey: String, profileBytes: Array[Byte])
+		case class SendPic(picAesKey: String, data: Array[Byte])
 		// case class AccessFriend(userID: Int, frdID: Int, bytes: String)
 
 		object MyJsonProtocol extends DefaultJsonProtocol {
@@ -58,9 +59,10 @@ object project4 extends App with SimpleRoutingApp{
 			implicit val AlbumFormat = jsonFormat4(Album)
 			implicit val PageFormat = jsonFormat3(Page)
 			implicit val AccessFriendFormat = jsonFormat3(AccessFriend)
-			implicit val SendProfileFormat = jsonFormat2(SendProfile)
 			implicit val PicFormat = jsonFormat5(Pic)
 			implicit val PicFrdListFormat = jsonFormat2(PicFrdList)
+			implicit val SendProfileFormat = jsonFormat2(SendProfile)
+			implicit val SendPicFormat = jsonFormat2(SendPic)
 		}
 
 		println("project4 - Facebook Simulator")
@@ -91,6 +93,7 @@ object project4 extends App with SimpleRoutingApp{
 					posts(userID) += text
 
 				case AddPicture(userID: Int, picID: Int, pic: Pic) =>
+					// pics(userID)(picID) = new Pic(pic.id, pic.from, pic.data, pic.picAcl, pic.picAesKeys)
 					pics(userID)(picID) = pic
 
 				case AddAlbum(userID: Int, albumID: Int, album: Album) =>
@@ -149,6 +152,34 @@ object project4 extends App with SimpleRoutingApp{
 						complete {
 							"ok"
 						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"getPicture") {
+					parameters("userID".as[Int], "frdID".as[Int], "picID".as[Int]) { (userID, frdID, picID) =>
+						// try catch for java.lang.IndexOutOfBoundsException
+						if(pics(frdID).contains(picID)){
+							if(pics(frdID)(picID).picAcl.contains(userID)){
+								println("Sending picture "+picID+" of user "+frdID+" to user "+userID)
+								// val bytes = Base64.decodeBase64(accessProfiles(getID)(userID))
+								var index: Int = pics(frdID)(picID).picAcl.indexOf(userID)
+								val res = SendPic(pics(frdID)(picID).picAesKeys(index), pics(frdID)(picID).data )
+								complete {
+									res
+								}
+							} else {
+								println("User "+userID+" dont have access to picture "+picID+" of user "+frdID)
+								complete {
+									"PermissionDenied"
+								}
+							}
+						} else {
+							complete {
+								"PictureNotFound"
+							}
+						}
+						
 					}
 				}
 			}~
