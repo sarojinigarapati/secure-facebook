@@ -28,7 +28,7 @@ object project4 extends App with SimpleRoutingApp{
 		var posts = new HashMap[Int, HashMap[Int, fPost]]()
 		var pics = new HashMap[Int, HashMap[Int, Pic]]()
 		var albums = new HashMap[Int, HashMap[Int, Album]]()
-		var pages = new HashMap[Int, HashMap[Int, Page]]()
+		var pages = new HashMap[Int, Page]()
 		var frdRequests = new HashMap[Int, ListBuffer[Int]]()
 
 		case class Init(numOfUsers: Int)
@@ -37,7 +37,7 @@ object project4 extends App with SimpleRoutingApp{
 		case class AddPost(userID: Int, postID: Int, post: fPost)
 		case class AddPicture(userID: Int, picID: Int, pic: Pic)
 		case class AddAlbum(userID: Int, albumID: Int, album: Album) 
-		case class AddPage(userID: Int, pageID: Int, page: Page)
+		case class AddPage(pageID: Int, page: Page)
 
 		case class Profile(id: String, first_name: String, last_name: String, age: String, email: String, gender: String, relation_status: String)
 		case class SignUp(id: Int, pkey: Array[Byte], profile: Array[Byte])
@@ -45,11 +45,10 @@ object project4 extends App with SimpleRoutingApp{
 		case class PostFrdList(frdList: Array[Int], frdPubKeys: Array[Array[Byte]])
 		case class Pic(id: Int, from: Int, data: Array[Byte], picAcl: Array[Int], picAesKeys: Array[Array[Byte]])
 		case class PicFrdList(frdList: Array[Int], frdPubKeys: Array[Array[Byte]])
+		case class Page(id: Int, from: Int, data: Array[Byte], acl: Array[Int], aesKeys: Array[Array[Byte]])
 		case class Album(id: Int, from: Int, data: Array[Array[Byte]], acl: Array[Int], aesKeys: Array[Array[Byte]])
 		case class FrdList(frdList: Array[Int], frdPubKeys: Array[Array[Byte]])
 		
-		case class Picture(id: Int, from: Int, text: String, likes: Array[String])
-		case class Page(id: Int, from: Int, name: String)
 		case class AccessFriend(userID: Int, frdID: Int, bytes: Array[Byte])
 		case class SendProfile(profileAesKey: String, profileBytes: Array[Byte])
 		case class SendPic(picAesKey: Array[Byte], data: Array[Byte])
@@ -60,14 +59,13 @@ object project4 extends App with SimpleRoutingApp{
 		object MyJsonProtocol extends DefaultJsonProtocol {
 			implicit val ProfileFormat = jsonFormat7(Profile)
 			implicit val SignUpFormat = jsonFormat3(SignUp)
-			implicit val PictureFormat = jsonFormat4(Picture)
-			implicit val PageFormat = jsonFormat3(Page)
 			implicit val AccessFriendFormat = jsonFormat3(AccessFriend)
 			implicit val PostFormat = jsonFormat5(fPost)
 			implicit val PostFrdListFormat = jsonFormat2(PostFrdList)
 			implicit val PicFormat = jsonFormat5(Pic)
 			implicit val PicFrdListFormat = jsonFormat2(PicFrdList)
 			implicit val AlbumFormat = jsonFormat5(Album)
+			implicit val PageFormat = jsonFormat5(Page)
 			implicit val FrdListFormat = jsonFormat2(FrdList)
 			implicit val SendProfileFormat = jsonFormat2(SendProfile)
 			implicit val SendPicFormat = jsonFormat2(SendPic)
@@ -84,7 +82,6 @@ object project4 extends App with SimpleRoutingApp{
 				case Init(numOfUsers: Int) =>
 					println("Initialise profiles for "+numOfUsers+" users!")
 					for(i <- 0 to numOfUsers-1) friendLists += new ListBuffer[Int]
-					// for(i <- 0 to numOfUsers-1) posts += new Queue[String]
 					for(i <- 0 to numOfUsers-1) posts(i) = new HashMap[Int,fPost]
 					for(i <- 0 to numOfUsers-1) pics(i) = new HashMap[Int,Pic]
 					for(i <- 0 to numOfUsers-1) albums(i) = new HashMap[Int,Album]
@@ -100,6 +97,9 @@ object project4 extends App with SimpleRoutingApp{
 					profiles(userID) = profile
 					friendLists(userID) += userID
 
+				case AddPage(pageID: Int, page: Page) =>
+					pages(pageID) = page
+
 				case AddPost(userID: Int, postID: Int, post: fPost) =>
 					posts(userID)(postID) = post
 
@@ -109,10 +109,8 @@ object project4 extends App with SimpleRoutingApp{
 				case AddAlbum(userID: Int, albumID: Int, album: Album) =>
 					albums(userID)(albumID) = album
 
-				case AddPage(userID: Int, pageID: Int, page: Page) =>
-					pages(userID)(pageID) = page
-
 				case "Shutdown" =>
+					println("Shutting Down!!!")
 					// context.system.shutdown()
 			}
 		}
@@ -248,13 +246,67 @@ object project4 extends App with SimpleRoutingApp{
 				}
 			}~
 			post {
+				path("facebook"/"initPage") {
+					parameters("userID".as[Int]) { (userID) =>
+						var frdList: Array[Int] = friendLists(userID).toArray
+						var frdPubKeys: ArrayBuffer[Array[Byte]] = ArrayBuffer[Array[Byte]]()
+						for(i <- 0 until frdList.length){
+							frdPubKeys += profiles(frdList(i)).pkey 
+						}
+						val res = FrdList(frdList,frdPubKeys.toArray)
+						complete {
+							res
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"addPage") {
+					entity(as[Page]) { page =>
+						println("Adding a page for user "+page.from)
+						server ! AddPage(page.id, page)
+						complete {
+							"ok"
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"getPage") {
+					parameters("userID".as[Int], "pageID".as[Int]) { (userID, pageID) =>
+						// try catch for java.lang.IndexOutOfBoundsException
+						if(pages.contains(pageID)){
+							if(pages(pageID).acl.contains(userID)){
+								println("Sending page "+pageID+" to user "+userID)
+								var index: Int = pages(pageID).acl.indexOf(userID)
+								val res = SendPost(pages(pageID).aesKeys(index), pages(pageID).data )
+								complete {
+									res
+								}
+							} else {
+								println("User "+userID+" dont have access to page "+pageID)
+								complete {
+									"PermissionDenied"
+								}
+							}
+						} else {
+							complete {
+								"PageNotFound"
+							}
+						}
+						
+					}
+				}
+			}~
+			post {
 				path("facebook"/"initAlbum") {
 					parameters("userID".as[Int]) { (userID) =>
 						var frdList: Array[Int] = friendLists(userID).toArray
 						var frdPubKeys: ArrayBuffer[Array[Byte]] = ArrayBuffer[Array[Byte]]()
 						for(i <- 0 until frdList.length) frdPubKeys += profiles(frdList(i)).pkey 
+						val res = FrdList(frdList,frdPubKeys.toArray)
 						complete {
-							FrdList(frdList,frdPubKeys.toArray)
+							res
 						}
 					}
 				}
@@ -277,8 +329,9 @@ object project4 extends App with SimpleRoutingApp{
 							if(albums(frdID)(albumID).acl.contains(userID)){
 								println("Sending album "+albumID+" of user "+frdID+" to user "+userID)
 								var index: Int = albums(frdID)(albumID).acl.indexOf(userID)
+								val res = SendAlbum(albums(frdID)(albumID).aesKeys(index), albums(frdID)(albumID).data)
 								complete {
-									SendAlbum(albums(frdID)(albumID).aesKeys(index), albums(frdID)(albumID).data )
+									res
 								}
 							} else {
 								println("User "+userID+" dont have access to album "+albumID+" of user "+frdID)
@@ -334,21 +387,6 @@ object project4 extends App with SimpleRoutingApp{
 				}
 			}~
 			post {
-				path("facebook"/"getPage") {
-					parameters("userID".as[Int], "pageID".as[Int]) { (userID, pageID) =>
-						// try catch for java.lang.IndexOutOfBoundsException
-						println("Sending a page of user "+userID)
-						var res: Page = Page(0,0,"Invalid Page id!!")
-						if((pages(userID).contains(pageID)) == true){
-							res = pages(userID)(pageID)
-						}
-						complete {
-							res
-						}
-					}
-				}
-			}~
-			post {
 				path("facebook"/"getFriendList") {
 					parameters("userID".as[Int]) { (userID) =>
 						// try catch for java.lang.IndexOutOfBoundsException
@@ -365,17 +403,6 @@ object project4 extends App with SimpleRoutingApp{
 						server ! Init(numOfUsers)
 						complete {
 							"Initialization is done"
-						}
-					}
-				}
-			}~
-			post {
-				path("facebook"/"addPage"){
-					entity(as[Page]) { page =>
-						println("Adding a page for user "+page.from)
-						server ! AddPage(page.from, page.id, page)
-						complete {
-							"Page added for user "+page.from
 						}
 					}
 				}
