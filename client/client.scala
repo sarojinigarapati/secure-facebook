@@ -301,29 +301,19 @@ object project4 {
 							for(i <- 0 until acceptList.length){
 								self ! AcceptFriend(acceptList(i))
 							}
-							// println(str.entity.asString)
-						case Failure(error) =>
-							println(error+"something wrong")
 					}
 
 				case AcceptFriend(frdID: Int) =>
 					val responseFuture = pipeline(Post("http://localhost:8080/facebook/acceptFriend?userID="+myID+"&frdID="+frdID))
 					responseFuture onComplete {
 						case Success(str: HttpResponse) =>
-							// println(str.entity.asString)
 							if(str.entity.asString == "AlreadyFriend"){
 								println("user "+frdID+" is already a friend to user "+myID)
 							} else {
 								println("users "+myID+" and "+frdID+ " became friends!!")
 								var bytes: Array[Byte] = str.entity.asString.parseJson.convertTo[Array[Byte]]
-								// var bytes: Array[Byte] = str.entity.data.toByteArray
-								// println(bytes.toJson)
-								// val kf: KeyFactory = KeyFactory.getInstance("RSA"); // or "EC" or whatever
-								// val frdPublicKey: PublicKey = kf.generatePublic(new X509EncodedKeySpec(bytes))
 								self ! GiveAccessToFriend(frdID, bytes)
 							}
-						case Failure(error) =>
-							println(error+"something wrong")
 					}
 
 				case "AddPicture" =>
@@ -332,8 +322,6 @@ object project4 {
 						case Success(str: HttpResponse) =>
 							var picFrdList: PicFrdList = str.entity.asString.parseJson.convertTo[PicFrdList]
 							self ! PictureAccess(picFrdList.frdList, picFrdList.frdPubKeys)
-						case Failure(error) =>
-							println(error+"something wrong")
 					}
 
 				case PictureAccess(frdList: Array[Int], frdPubKeys: Array[Array[Byte]]) =>
@@ -358,8 +346,6 @@ object project4 {
 					for(i <- 0 until frdList.length){
 						// if(Random.nextInt(100) < 50){
 							picAcl += frdList(i)
-							// var bytes: Array[Byte] = Base64.decodeBase64(frdPubKeys(i))
-
 							// Generate the friends public key
 							val kf: KeyFactory = KeyFactory.getInstance("RSA") // or "EC" or whatever
 							val frdPublicKey: PublicKey = kf.generatePublic(new X509EncodedKeySpec(frdPubKeys(i)))
@@ -373,24 +359,10 @@ object project4 {
 							picAesKeys += (rsaCipher.wrap(photoAesKeys(numOfPics)))
 						// }
 					}
-					// picAcl += myID
-					// var rsaCipher: Cipher = Cipher.getInstance("RSA")
-					// // rsaCipher.init(Cipher.ENCRYPT_MODE, kp.getPublic())
-					// // picAesKeys += Base64.encodeBase64String(rsaCipher.doFinal(photoAesKeys(numOfPics).getEncoded()))
-
-					// rsaCipher.init(Cipher.WRAP_MODE, kp.getPublic())
-					// picAesKeys += (rsaCipher.wrap(photoAesKeys(numOfPics)))
-
 					// Send it to the server for storing
 					val json = Pic(numOfPics, myID, data, picAcl.toArray, picAesKeys.toArray).toJson.toString
 					numOfPics = numOfPics + 1
-					val responseFuture = pipeline(Post("http://localhost:8080/facebook/addPicture",HttpEntity(MediaTypes.`application/json`, json)))
-					responseFuture onComplete {
-						case Success(str: HttpResponse) =>
-							// println(str.entity.asString)
-						case Failure(error) =>
-							println(error+"something wrong")
-					}
+					pipeline(Post("http://localhost:8080/facebook/addPicture",HttpEntity(MediaTypes.`application/json`, json)))
 
 				case GetPicture(userID: Int, picID: Int) =>
 					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getPicture?userID="+myID+"&frdID="+userID+"&picID="+picID))
@@ -400,28 +372,13 @@ object project4 {
 								println("PermissionDenied for user "+myID+" to access picture "+picID+" of user "+userID)
 							} else if(str.entity.asString == "PictureNotFound"){
 								println("No picture "+picID+" of user "+userID+" exists!!")
-							// } else if(userID == myID) {
-							// 	var sendPic: SendPic = str.entity.asString.parseJson.convertTo[SendPic]
-
-							// 	// Decrypt Data
-							// 	var aescipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
-							// 	aescipher.init(Cipher.DECRYPT_MODE, photoAesKeys(picID))
-							// 	val decryptedBytes = aescipher.doFinal(sendPic.data)
-							// 	val pic = (new String(decryptedBytes, "UTF-8"))
-							// 	println(pic)
 							} else {
 								println("Getting picture "+picID+" of user "+userID+" for user "+myID)
 								var sendPic: SendPic = str.entity.asString.parseJson.convertTo[SendPic]
 
 								// First decrypt with your private key to get AES secret key
 								var cipher: Cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding")
-								// cipher.init(Cipher.DECRYPT_MODE, kp.getPrivate())
-								// val aesKey = Base64.decodeBase64(sendPic.picAesKey)
-								// val bytes = cipher.doFinal(aesKey)
-								// val aeskeySpec: SecretKeySpec = new SecretKeySpec(bytes, "AES")
-
 								cipher.init(Cipher.UNWRAP_MODE, kp.getPrivate())
-								// val aesKey = Base64.decodeBase64(sendPic.picAesKey)
 								val aeskeySpec = (cipher.unwrap(sendPic.picAesKey,"AES",Cipher.SECRET_KEY))
 
 								// Decrypt Data
@@ -431,8 +388,6 @@ object project4 {
 								val pic = (new String(decryptedBytes, "UTF-8"))
 								println(pic)
 							}
-						case Failure(error) =>
-							println(error+"something wrong")
 					}
 
 				case "AddPost" =>
@@ -441,8 +396,6 @@ object project4 {
 						case Success(str: HttpResponse) =>
 							var postFrdList: PostFrdList = str.entity.asString.parseJson.convertTo[PostFrdList]
 							self ! PostAccess(postFrdList.frdList, postFrdList.frdPubKeys)
-						case Failure(error) =>
-							println(error+"something wrong")
 					}
 
 				case PostAccess(frdList: Array[Int], frdPubKeys: Array[Array[Byte]]) =>
@@ -462,7 +415,6 @@ object project4 {
 					for(i <- 0 until frdList.length){
 						// if(Random.nextInt(100) < 50){
 							acl += frdList(i)
-
 							// Generate the friends public key
 							val kf: KeyFactory = KeyFactory.getInstance("RSA") // or "EC" or whatever
 							val frdPublicKey: PublicKey = kf.generatePublic(new X509EncodedKeySpec(frdPubKeys(i)))
@@ -477,13 +429,7 @@ object project4 {
 					// Send it to the server for storing
 					val json = fPost(numOfPosts, myID, data, acl.toArray, aesKeys.toArray).toJson.toString
 					numOfPosts = numOfPosts + 1
-					val responseFuture = pipeline(Post("http://localhost:8080/facebook/addPost",HttpEntity(MediaTypes.`application/json`, json)))
-					responseFuture onComplete {
-						case Success(str: HttpResponse) =>
-							// println(str.entity.asString)
-						case Failure(error) =>
-							println(error+"something wrong")
-					}
+					pipeline(Post("http://localhost:8080/facebook/addPost",HttpEntity(MediaTypes.`application/json`, json)))
 
 				case GetPost(userID: Int, postID: Int) =>
 					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getPost?userID="+myID+"&frdID="+userID+"&postID="+postID))
@@ -510,8 +456,6 @@ object project4 {
 								val post = (new String(decryptedBytes, "UTF-8"))
 								println(post)
 							}
-						case Failure(error) =>
-							println(error+"something wrong")
 					}
 
 				case "AddAlbum" =>
@@ -520,8 +464,6 @@ object project4 {
 						case Success(str: HttpResponse) =>
 							var frdList: FrdList = str.entity.asString.parseJson.convertTo[FrdList]
 							self ! AlbumAccess(frdList.frdList, frdList.frdPubKeys)
-						case Failure(error) =>
-							println(error+"something wrong")
 					}
 
 				case AlbumAccess(frdList: Array[Int], frdPubKeys: Array[Array[Byte]]) =>
@@ -540,7 +482,6 @@ object project4 {
 						data += aescipher.doFinal(text.getBytes("UTF-8"))
 					}
 					
-
 					// Create a list of encrypted keys who can access the picture
 					var acl: ArrayBuffer[Int] = ArrayBuffer[Int]()
 					var aesKeys: ArrayBuffer[Array[Byte]] = ArrayBuffer[Array[Byte]]()
@@ -562,13 +503,7 @@ object project4 {
 					// Send it to the server for storing
 					val json = Album(numOfAlbums, myID, data.toArray, acl.toArray, aesKeys.toArray).toJson.toString
 					numOfAlbums = numOfAlbums + 1
-					val responseFuture = pipeline(Post("http://localhost:8080/facebook/addPost",HttpEntity(MediaTypes.`application/json`, json)))
-					responseFuture onComplete {
-						case Success(str: HttpResponse) =>
-							// println(str.entity.asString)
-						case Failure(error) =>
-							println(error+"something wrong")
-					}
+					pipeline(Post("http://localhost:8080/facebook/addPost",HttpEntity(MediaTypes.`application/json`, json)))
 
 				case GetAlbum(userID: Int, albumID: Int) =>
 					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getAlbum?userID="+myID+"&frdID="+userID+"&albumID="+albumID))
@@ -598,8 +533,6 @@ object project4 {
 								}
 								println(album.toArray.toJson)
 							}
-						case Failure(error) =>
-							println(error+"something wrong")
 					}
 
 				case GetPage(userID: Int, pageID: Int) =>
@@ -610,8 +543,6 @@ object project4 {
 							println("user "+myID+" received page of "+userID+"\n"+
 								"\npageID "+page.id+
 								"\nname "+page.name)
-						case Failure(error) =>
-							println(error+"something wrong")
 					}
 
 				case GetFriendList(userID: Int) =>
@@ -621,10 +552,6 @@ object project4 {
 						case Success(str: HttpResponse) =>
 							var frdListArray: Array[Int] = str.entity.asString.parseJson.convertTo[Array[Int]]
 							println(frdListArray.toJson)
-							// println("user "+myID+" received friend list of "+userID+"\n"+
-							// 	str.entity.asString)
-						case Failure(error) =>
-							println(error+"something wrong")
 					}
 
 				case "AddPage" =>
@@ -636,8 +563,6 @@ object project4 {
 					responseFuture onComplete {
 						case Success(str: HttpResponse) =>
 							// println(str.entity.asString)
-						case Failure(error) =>
-							println(error+"something wrong")
 					}
 			}
 		}
