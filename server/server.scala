@@ -21,48 +21,58 @@ object project4 extends App with SimpleRoutingApp{
 	override def main(args: Array[String]){
 
 		val AvgNumOfFrds: Int = 5
-		var posts = new ArrayBuffer[Queue[String]]()
 		var friendLists = new ArrayBuffer[ListBuffer[Int]]()
 		var profiles = new HashMap[Int, SignUp]()  // store list of class objects
 		var publicKeys = new HashMap[Int, PublicKey]()
 		var accessProfiles = new HashMap[Int, HashMap[Int, String]]() 
+		var posts = new HashMap[Int, HashMap[Int, fPost]]()
 		var pics = new HashMap[Int, HashMap[Int, Pic]]()
 		var albums = new HashMap[Int, HashMap[Int, Album]]()
 		var pages = new HashMap[Int, HashMap[Int, Page]]()
 		var frdRequests = new HashMap[Int, ListBuffer[Int]]()
-		// var frdRequests = new ArrayBuffer[ListBuffer[Int]]()
 
 		case class Init(numOfUsers: Int)
 		case class AddProfile(userID: Int, profile: SignUp)
 		case class GetProfile(userID: Int)
-		case class Post(userID: Int, text: String)
+		case class AddPost(userID: Int, postID: Int, post: fPost)
 		case class AddPicture(userID: Int, picID: Int, pic: Pic)
 		case class AddAlbum(userID: Int, albumID: Int, album: Album) 
 		case class AddPage(userID: Int, pageID: Int, page: Page)
 
 		case class Profile(id: String, first_name: String, last_name: String, age: String, email: String, gender: String, relation_status: String)
 		case class SignUp(id: Int, pkey: Array[Byte], profile: Array[Byte])
+		case class fPost(id: Int, from: Int, data: Array[Byte], acl: Array[Int], aesKeys: Array[Array[Byte]])
+		case class PostFrdList(frdList: Array[Int], frdPubKeys: Array[Array[Byte]])
 		case class Pic(id: Int, from: Int, data: Array[Byte], picAcl: Array[Int], picAesKeys: Array[Array[Byte]])
 		case class PicFrdList(frdList: Array[Int], frdPubKeys: Array[Array[Byte]])
+		case class Album(id: Int, from: Int, data: Array[Array[Byte]], acl: Array[Int], aesKeys: Array[Array[Byte]])
+		case class FrdList(frdList: Array[Int], frdPubKeys: Array[Array[Byte]])
+		
 		case class Picture(id: Int, from: Int, text: String, likes: Array[String])
-		case class Album(id: Int, from: Int, pictures: Array[Picture], likes: Array[String])
 		case class Page(id: Int, from: Int, name: String)
 		case class AccessFriend(userID: Int, frdID: Int, bytes: Array[Byte])
 		case class SendProfile(profileAesKey: String, profileBytes: Array[Byte])
 		case class SendPic(picAesKey: Array[Byte], data: Array[Byte])
+		case class SendPost(aesKey: Array[Byte], data: Array[Byte])
+		case class SendAlbum(aesKey: Array[Byte], data: Array[Array[Byte]])
 		// case class AccessFriend(userID: Int, frdID: Int, bytes: String)
 
 		object MyJsonProtocol extends DefaultJsonProtocol {
 			implicit val ProfileFormat = jsonFormat7(Profile)
 			implicit val SignUpFormat = jsonFormat3(SignUp)
 			implicit val PictureFormat = jsonFormat4(Picture)
-			implicit val AlbumFormat = jsonFormat4(Album)
 			implicit val PageFormat = jsonFormat3(Page)
 			implicit val AccessFriendFormat = jsonFormat3(AccessFriend)
+			implicit val PostFormat = jsonFormat5(fPost)
+			implicit val PostFrdListFormat = jsonFormat2(PostFrdList)
 			implicit val PicFormat = jsonFormat5(Pic)
 			implicit val PicFrdListFormat = jsonFormat2(PicFrdList)
+			implicit val AlbumFormat = jsonFormat5(Album)
+			implicit val FrdListFormat = jsonFormat2(FrdList)
 			implicit val SendProfileFormat = jsonFormat2(SendProfile)
 			implicit val SendPicFormat = jsonFormat2(SendPic)
+			implicit val SendPostFormat = jsonFormat2(SendPost)
+			implicit val SendAlbumFormat = jsonFormat2(SendAlbum)
 		}
 
 		println("project4 - Facebook Simulator")
@@ -74,7 +84,8 @@ object project4 extends App with SimpleRoutingApp{
 				case Init(numOfUsers: Int) =>
 					println("Initialise profiles for "+numOfUsers+" users!")
 					for(i <- 0 to numOfUsers-1) friendLists += new ListBuffer[Int]
-					for(i <- 0 to numOfUsers-1) posts += new Queue[String]
+					// for(i <- 0 to numOfUsers-1) posts += new Queue[String]
+					for(i <- 0 to numOfUsers-1) posts(i) = new HashMap[Int,fPost]
 					for(i <- 0 to numOfUsers-1) pics(i) = new HashMap[Int,Pic]
 					for(i <- 0 to numOfUsers-1) albums(i) = new HashMap[Int,Album]
 					for(i <- 0 to numOfUsers-1) accessProfiles(i) = new HashMap[Int, String]
@@ -89,16 +100,15 @@ object project4 extends App with SimpleRoutingApp{
 					profiles(userID) = profile
 					friendLists(userID) += userID
 
-				case Post(userID: Int, text: String) =>
-					posts(userID) += text
+				case AddPost(userID: Int, postID: Int, post: fPost) =>
+					posts(userID)(postID) = post
 
 				case AddPicture(userID: Int, picID: Int, pic: Pic) =>
-					// pics(userID)(picID) = new Pic(pic.id, pic.from, pic.data, pic.picAcl, pic.picAesKeys)
 					pics(userID)(picID) = pic
 
 				case AddAlbum(userID: Int, albumID: Int, album: Album) =>
 					albums(userID)(albumID) = album
-					// println(albums(userID)(albumID).toString)
+
 				case AddPage(userID: Int, pageID: Int, page: Page) =>
 					pages(userID)(pageID) = page
 
@@ -130,13 +140,10 @@ object project4 extends App with SimpleRoutingApp{
 			post {
 				path("facebook"/"initPicture") {
 					parameters("userID".as[Int]) { (userID) =>
-						println("Adding a picture for user "+userID)
 						var frdList: Array[Int] = friendLists(userID).toArray
 						var frdPubKeys: ArrayBuffer[Array[Byte]] = ArrayBuffer[Array[Byte]]()
 						for(i <- 0 until frdList.length){
-							// var bytes: Array[Byte] = profiles(userID).pkey 
-							// frdPubKeys += Base64.encodeBase64String(bytes)
-							frdPubKeys += profiles(userID).pkey 
+							frdPubKeys += profiles(frdList(i)).pkey 
 						}
 						val res = PicFrdList(frdList,frdPubKeys.toArray)
 						complete {
@@ -178,6 +185,110 @@ object project4 extends App with SimpleRoutingApp{
 						} else {
 							complete {
 								"PictureNotFound"
+							}
+						}
+						
+					}
+				}
+			}~
+			post {
+				path("facebook"/"initPost") {
+					parameters("userID".as[Int]) { (userID) =>
+						var frdList: Array[Int] = friendLists(userID).toArray
+						var frdPubKeys: ArrayBuffer[Array[Byte]] = ArrayBuffer[Array[Byte]]()
+						for(i <- 0 until frdList.length){
+							frdPubKeys += profiles(frdList(i)).pkey 
+						}
+						val res = PostFrdList(frdList,frdPubKeys.toArray)
+						// println(frdList.toJson)
+						// println(frdPubKeys.toArray.toJson)
+						complete {
+							res
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"addPost") {
+					entity(as[fPost]) { post =>
+						println("Adding a post for user "+post.from)
+						server ! AddPost(post.from, post.id, post)
+						complete {
+							"ok"
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"getPost") {
+					parameters("userID".as[Int], "frdID".as[Int], "postID".as[Int]) { (userID, frdID, postID) =>
+						// try catch for java.lang.IndexOutOfBoundsException
+						if(posts(frdID).contains(postID)){
+							if(posts(frdID)(postID).acl.contains(userID)){
+								println("Sending post "+postID+" of user "+frdID+" to user "+userID)
+								// val bytes = Base64.decodeBase64(accessProfiles(getID)(userID))
+								var index: Int = posts(frdID)(postID).acl.indexOf(userID)
+								val res = SendPost(posts(frdID)(postID).aesKeys(index), posts(frdID)(postID).data )
+								complete {
+									res
+								}
+							} else {
+								println("User "+userID+" dont have access to post "+postID+" of user "+frdID)
+								complete {
+									"PermissionDenied"
+								}
+							}
+						} else {
+							complete {
+								"PostNotFound"
+							}
+						}
+						
+					}
+				}
+			}~
+			post {
+				path("facebook"/"initAlbum") {
+					parameters("userID".as[Int]) { (userID) =>
+						var frdList: Array[Int] = friendLists(userID).toArray
+						var frdPubKeys: ArrayBuffer[Array[Byte]] = ArrayBuffer[Array[Byte]]()
+						for(i <- 0 until frdList.length) frdPubKeys += profiles(frdList(i)).pkey 
+						complete {
+							FrdList(frdList,frdPubKeys.toArray)
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"addAlbum") {
+					entity(as[Album]) { album =>
+						println("Adding an album for user "+album.from)
+						server ! AddAlbum(album.from, album.id, album)
+						complete {
+							"ok"
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"getalbum") {
+					parameters("userID".as[Int], "frdID".as[Int], "albumID".as[Int]) { (userID, frdID, albumID) =>
+						if(albums(frdID).contains(albumID)){
+							if(albums(frdID)(albumID).acl.contains(userID)){
+								println("Sending album "+albumID+" of user "+frdID+" to user "+userID)
+								var index: Int = albums(frdID)(albumID).acl.indexOf(userID)
+								complete {
+									SendAlbum(albums(frdID)(albumID).aesKeys(index), albums(frdID)(albumID).data )
+								}
+							} else {
+								println("User "+userID+" dont have access to album "+albumID+" of user "+frdID)
+								complete {
+									"PermissionDenied"
+								}
+							}
+						} else {
+							complete {
+								"AlbumNotFound"
 							}
 						}
 						
@@ -238,39 +349,12 @@ object project4 extends App with SimpleRoutingApp{
 				}
 			}~
 			post {
-				path("facebook"/"getPosts") {
-					parameters("userID".as[Int]) { (userID) =>
-						// try catch for java.lang.IndexOutOfBoundsException
-						println("Sending posts to user "+userID)
-						complete {
-							posts(userID).toString()
-						}
-					}
-				}
-			}~
-			post {
 				path("facebook"/"getFriendList") {
 					parameters("userID".as[Int]) { (userID) =>
 						// try catch for java.lang.IndexOutOfBoundsException
 						println("Sending friend list to user "+userID)
 						complete {
 							friendLists(userID).toArray.toJson.toString
-						}
-					}
-				}
-			}~
-			post {
-				path("facebook"/"getAlbum") {
-					parameters("userID".as[Int], "albumID".as[Int]) { (userID, albumID) =>
-						// try catch for java.lang.IndexOutOfBoundsException
-						println("Sending an album to user "+userID)
-						var dummyPic: Picture = Picture(0,0,"dummyPicture",Array("0"))
-						var res: Album = Album(0,0,Array(dummyPic),Array("0"))
-						if((albums(userID).contains(albumID)) == true){
-							res = albums(userID)(albumID)
-						}
-						complete {
-							res
 						}
 					}
 				}
@@ -297,27 +381,6 @@ object project4 extends App with SimpleRoutingApp{
 				}
 			}~
 			post {
-				path("facebook"/"addAlbum"){
-					entity(as[Album]) { album =>
-						println("Adding an album for user "+album.from.toInt)
-						server ! AddAlbum(album.from.toInt, album.id.toInt, album)
-						complete {
-							"User "+album.from.toInt+" added an album"
-						}
-					}
-				}
-			}~
-			post {
-				path("facebook"/"post") {
-					parameters("userID".as[Int], "text".as[String]) { (userID, text) =>
-						server ! Post(userID, text)
-						complete {
-							"User "+userID+" posted "+text
-						}
-					}
-				}
-			}~
-			post {
 				path("facebook"/"acceptFriendList") {
 					parameters("userID".as[Int]) { (userID) =>
 						val res = frdRequests(userID).toArray
@@ -332,7 +395,6 @@ object project4 extends App with SimpleRoutingApp{
 				path("facebook"/"accessFriend"){
 					entity(as[AccessFriend]) { x =>
 						accessProfiles(x.userID)(x.frdID) = Base64.encodeBase64String(x.bytes)
-						// friendLists(x.frdID) += x.userID
 						complete {
 							"ok"
 						}
