@@ -29,6 +29,8 @@ object project4 {
 		var numOfPages: Int = 0
 		var pageAesKeys: ArrayBuffer[SecretKey] = new ArrayBuffer[SecretKey]()
 		
+		case class Login(bytes: Array[Byte])
+		case class Logout(bytes: Array[Byte])
 		case class GetProfile(userID: Int)
 		case class GetPage(pageID: Int)
 		case class GetFriendList(userID: Int)
@@ -197,8 +199,7 @@ object project4 {
 					val responseFuture = pipeline(Post("http://localhost:8080/facebook/addProfile",HttpEntity(MediaTypes.`application/json`, json)))
 					responseFuture onComplete {
 						case Success(str: HttpResponse) =>
-							self ! GetProfile(myID)
-							self ! "DoActivity"
+							self ! "LogInToken"
 					}
 
 				case "DoActivity" =>
@@ -230,6 +231,49 @@ object project4 {
 						self ! GetFriendList(myID)
 						context.parent ! Stat(numOfPosts, numOfPics, numOfAlbums)
 					}
+
+				case "LogInToken" =>
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/loginToken?userID="+myID))
+					responseFuture onComplete {
+						case Success(str: HttpResponse) =>
+							val bytes = str.entity.asString.parseJson.convertTo[Array[Byte]]
+							self ! Login(bytes)
+					}
+
+				case Login(bytes: Array[Byte]) =>
+					// Decrypt with private key to get the token number
+					var cipher: Cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding")
+					cipher.init(Cipher.DECRYPT_MODE, kp.getPrivate())
+					val decryptedBytes = cipher.doFinal(bytes)
+					val token = (new String(decryptedBytes, "UTF-8"))
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/login?userID="+myID+"&token="+token))
+					responseFuture onComplete {
+						case Success(str: HttpResponse) =>
+							if(str.entity.asString == "LOGIN_SUCCESSFUL"){
+								println("\nUser "+myID+" logged in successfully!!")
+								self ! GetProfile(myID)
+								self ! "DoActivity"
+							} else {
+								println("\nUser "+myID+" was unable to login!!")
+							}
+					}
+
+				case "LogOutToken" =>
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/logoutToken?userID="+myID))
+					responseFuture onComplete {
+						case Success(str: HttpResponse) =>
+							val bytes = str.entity.asString.parseJson.convertTo[Array[Byte]]
+							self ! Logout(bytes)
+					}
+
+				case Logout(bytes: Array[Byte]) =>
+					// Decrypt with private key to get the token number
+					var cipher: Cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding")
+					cipher.init(Cipher.DECRYPT_MODE, kp.getPrivate())
+					val decryptedBytes = cipher.doFinal(bytes)
+					val token = (new String(decryptedBytes, "UTF-8"))
+					pipeline(Post("http://localhost:8080/facebook/logout?userID="+myID+"&token="+token))
+
 
 				case GetProfile(getID: Int) =>
 					println("user "+myID+" requesting profile of "+getID)
