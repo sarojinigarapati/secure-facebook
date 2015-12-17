@@ -31,7 +31,6 @@ object project4 extends App with SimpleRoutingApp{
 		var pages = new HashMap[Int, Page]()
 		var frdRequests = new HashMap[Int, ListBuffer[Int]]()
 		var loginTokens = new HashMap[Int, String]()
-		var logoutTokens = new HashMap[Int, String]()
 		var activeUsers = new HashMap[Int, String]()
 
 		case class Init(numOfUsers: Int)
@@ -184,29 +183,9 @@ object project4 extends App with SimpleRoutingApp{
 				}
 			}~
 			post {
-				path("facebook"/"logoutToken") {
-					parameters("userID".as[Int]) { (userID) =>
-						// Generate a random number
-						val token = Random.nextInt(10000).toString
-						logoutTokens(userID) = token
-						val bytes = token.getBytes("UTF-8")
-						// Get users public key
-						val kf: KeyFactory = KeyFactory.getInstance("RSA") // or "EC" or whatever
-						val userPublicKey: PublicKey = kf.generatePublic(new X509EncodedKeySpec(profiles(userID).pkey))
-						// Encrypt with user's public key
-						var cipher: Cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding")
-						cipher.init(Cipher.ENCRYPT_MODE, userPublicKey)
-						val encryptedToken = cipher.doFinal(bytes)
-						complete {
-							encryptedToken
-						}
-					}
-				}
-			}~
-			post {
 				path("facebook"/"logout") {
 					parameters("userID".as[Int], "token".as[String]) { (userID, token) =>
-						if(logoutTokens(userID) == token){
+						if(loginTokens(userID) == token){
 							activeUsers.remove(userID)
 							complete {
 								"LOGOUT_SUCCESSFUL"
