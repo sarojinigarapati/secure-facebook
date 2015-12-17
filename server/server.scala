@@ -120,7 +120,7 @@ object project4 extends App with SimpleRoutingApp{
 					albums(userID)(albumID) = album
 
 				case "Shutdown" =>
-					println("Shutting Down!!!")
+					// println("Shutting Down!!!")
 					// context.system.shutdown()
 			}
 		}
@@ -200,32 +200,6 @@ object project4 extends App with SimpleRoutingApp{
 				}
 			}~
 			post {
-				path("facebook"/"initPicture") {
-					parameters("userID".as[Int]) { (userID) =>
-						var frdList: Array[Int] = friendLists(userID).toArray
-						var frdPubKeys: ArrayBuffer[Array[Byte]] = ArrayBuffer[Array[Byte]]()
-						for(i <- 0 until frdList.length){
-							frdPubKeys += profiles(frdList(i)).pkey 
-						}
-						val res = PicFrdList(frdList,frdPubKeys.toArray)
-						complete {
-							res
-						}
-					}
-				}
-			}~
-			post {
-				path("facebook"/"addPicture") {
-					entity(as[Pic]) { pic =>
-						println("Adding a picture for user "+pic.from)
-						server ! AddPicture(pic.from, pic.id, pic)
-						complete {
-							"ok"
-						}
-					}
-				}
-			}~
-			post {
 				path("facebook"/"getPicture") {
 					parameters("userID".as[Int], "frdID".as[Int], "picID".as[Int]) { (userID, frdID, picID) =>
 						// try catch for java.lang.IndexOutOfBoundsException
@@ -250,34 +224,6 @@ object project4 extends App with SimpleRoutingApp{
 							}
 						}
 						
-					}
-				}
-			}~
-			post {
-				path("facebook"/"initPost") {
-					parameters("userID".as[Int]) { (userID) =>
-						var frdList: Array[Int] = friendLists(userID).toArray
-						var frdPubKeys: ArrayBuffer[Array[Byte]] = ArrayBuffer[Array[Byte]]()
-						for(i <- 0 until frdList.length){
-							frdPubKeys += profiles(frdList(i)).pkey 
-						}
-						val res = PostFrdList(frdList,frdPubKeys.toArray)
-						// println(frdList.toJson)
-						// println(frdPubKeys.toArray.toJson)
-						complete {
-							res
-						}
-					}
-				}
-			}~
-			post {
-				path("facebook"/"addPost") {
-					entity(as[fPost]) { post =>
-						println("Adding a post for user "+post.from)
-						server ! AddPost(post.from, post.id, post)
-						complete {
-							"ok"
-						}
 					}
 				}
 			}~
@@ -310,32 +256,6 @@ object project4 extends App with SimpleRoutingApp{
 				}
 			}~
 			post {
-				path("facebook"/"initPage") {
-					parameters("userID".as[Int]) { (userID) =>
-						var frdList: Array[Int] = friendLists(userID).toArray
-						var frdPubKeys: ArrayBuffer[Array[Byte]] = ArrayBuffer[Array[Byte]]()
-						for(i <- 0 until frdList.length){
-							frdPubKeys += profiles(frdList(i)).pkey 
-						}
-						val res = FrdList(frdList,frdPubKeys.toArray)
-						complete {
-							res
-						}
-					}
-				}
-			}~
-			post {
-				path("facebook"/"addPage") {
-					entity(as[Page]) { page =>
-						println("Adding a page for user "+page.from)
-						server ! AddPage(page.id, page)
-						complete {
-							"ok"
-						}
-					}
-				}
-			}~
-			post {
 				path("facebook"/"getPage") {
 					parameters("userID".as[Int], "pageID".as[Int]) { (userID, pageID) =>
 						// try catch for java.lang.IndexOutOfBoundsException
@@ -359,6 +279,113 @@ object project4 extends App with SimpleRoutingApp{
 							}
 						}
 						
+					}
+				}
+			}~
+			post {
+				path("facebook"/"getProfile") {
+					parameters("userID".as[Int], "getID".as[Int]) { (userID, getID) =>
+						// try catch for java.lang.IndexOutOfBoundsException
+						if(friendLists(userID).contains(getID)){
+							if(userID == getID){
+								val res = SendProfile("NA", profiles(getID).profile )
+								complete {
+									res
+								}
+							} else {
+								println("Sending profile of user "+getID+" to user "+userID)
+								// val bytes = Base64.decodeBase64(accessProfiles(getID)(userID))
+								val res = SendProfile(accessProfiles(getID)(userID), profiles(getID).profile )
+								complete {
+									res
+								}
+							}
+						} else {
+							println("User "+userID+" is not friend of user "+getID)
+							complete {
+								"PermissionDenied"
+							}
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"initPicture") {
+					parameters("userID".as[Int]) { (userID) =>
+						var frdList: Array[Int] = friendLists(userID).toArray
+						var frdPubKeys: ArrayBuffer[Array[Byte]] = ArrayBuffer[Array[Byte]]()
+						for(i <- 0 until frdList.length){
+							frdPubKeys += profiles(frdList(i)).pkey 
+						}
+						val res = PicFrdList(frdList,frdPubKeys.toArray)
+						complete {
+							res
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"addPicture") {
+					entity(as[Pic]) { pic =>
+						println("Adding a picture for user "+pic.from)
+						server ! AddPicture(pic.from, pic.id, pic)
+						complete {
+							"ok"
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"initPost") {
+					parameters("userID".as[Int]) { (userID) =>
+						var frdList: Array[Int] = friendLists(userID).toArray
+						var frdPubKeys: ArrayBuffer[Array[Byte]] = ArrayBuffer[Array[Byte]]()
+						for(i <- 0 until frdList.length){
+							frdPubKeys += profiles(frdList(i)).pkey 
+						}
+						val res = PostFrdList(frdList,frdPubKeys.toArray)
+						// println(frdList.toJson)
+						// println(frdPubKeys.toArray.toJson)
+						complete {
+							res
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"addPost") {
+					entity(as[fPost]) { post =>
+						println("Adding a post for user "+post.from)
+						server ! AddPost(post.from, post.id, post)
+						complete {
+							"ok"
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"initPage") {
+					parameters("userID".as[Int]) { (userID) =>
+						var frdList: Array[Int] = friendLists(userID).toArray
+						var frdPubKeys: ArrayBuffer[Array[Byte]] = ArrayBuffer[Array[Byte]]()
+						for(i <- 0 until frdList.length){
+							frdPubKeys += profiles(frdList(i)).pkey 
+						}
+						val res = FrdList(frdList,frdPubKeys.toArray)
+						complete {
+							res
+						}
+					}
+				}
+			}~
+			post {
+				path("facebook"/"addPage") {
+					entity(as[Page]) { page =>
+						println("Adding a page for user "+page.from)
+						server ! AddPage(page.id, page)
+						complete {
+							"ok"
+						}
 					}
 				}
 			}~
@@ -419,33 +446,6 @@ object project4 extends App with SimpleRoutingApp{
 						server ! AddProfile(signUp.id, signUp)
 						complete {
 							signUp.profile
-						}
-					}
-				}
-			}~
-			post {
-				path("facebook"/"getProfile") {
-					parameters("userID".as[Int], "getID".as[Int]) { (userID, getID) =>
-						// try catch for java.lang.IndexOutOfBoundsException
-						if(friendLists(userID).contains(getID)){
-							if(userID == getID){
-								val res = SendProfile("NA", profiles(getID).profile )
-								complete {
-									res
-								}
-							} else {
-								println("Sending profile of user "+getID+" to user "+userID)
-								// val bytes = Base64.decodeBase64(accessProfiles(getID)(userID))
-								val res = SendProfile(accessProfiles(getID)(userID), profiles(getID).profile )
-								complete {
-									res
-								}
-							}
-						} else {
-							println("User "+userID+" is not friend of user "+getID)
-							complete {
-								"PermissionDenied"
-							}
 						}
 					}
 				}
