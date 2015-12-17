@@ -284,26 +284,34 @@ object project4 extends App with SimpleRoutingApp{
 			}~
 			post {
 				path("facebook"/"getProfile") {
-					parameters("userID".as[Int], "getID".as[Int]) { (userID, getID) =>
+					parameters("userID".as[Int], "getID".as[Int], "accessToken".as[String]) { 
+						(userID, getID, accessToken) =>
 						// try catch for java.lang.IndexOutOfBoundsException
-						if(friendLists(userID).contains(getID)){
-							if(userID == getID){
-								val res = SendProfile("NA", profiles(getID).profile )
-								complete {
-									res
+						if(accessToken == loginTokens(userID)){
+							if(friendLists(userID).contains(getID)){
+								if(userID == getID){
+									val res = SendProfile("NA", profiles(getID).profile )
+									complete {
+										res
+									}
+								} else {
+									println("Sending profile of user "+getID+" to user "+userID)
+									// val bytes = Base64.decodeBase64(accessProfiles(getID)(userID))
+									val res = SendProfile(accessProfiles(getID)(userID), profiles(getID).profile )
+									complete {
+										res
+									}
 								}
 							} else {
-								println("Sending profile of user "+getID+" to user "+userID)
-								// val bytes = Base64.decodeBase64(accessProfiles(getID)(userID))
-								val res = SendProfile(accessProfiles(getID)(userID), profiles(getID).profile )
+								println("User "+userID+" is not friend of user "+getID)
 								complete {
-									res
+									"PermissionDenied"
 								}
 							}
 						} else {
-							println("User "+userID+" is not friend of user "+getID)
+							println("User "+userID+" session expired!!")
 							complete {
-								"PermissionDenied"
+								"SESSION_EXPIRED"
 							}
 						}
 					}

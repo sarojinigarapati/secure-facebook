@@ -219,10 +219,10 @@ object project4 {
 					// cancels1 += system.scheduler.schedule(3000 milliseconds,8000 milliseconds,self,"AddAlbum")
 					cancels2 += system.scheduler.schedule(simulationTime1 milliseconds,3000 milliseconds,self,GetProfile(Random.nextInt(numOfUsers)))
 					cancels2 += system.scheduler.schedule(simulationTime1 milliseconds,5000 milliseconds,self,GetFriendList(Random.nextInt(numOfUsers)))
-					cancels2 += system.scheduler.schedule(simulationTime1 milliseconds,8000 milliseconds,self,GetPage(Random.nextInt(50)))
+					cancels2 += system.scheduler.schedule(simulationTime1 milliseconds,8000 milliseconds,self,GetPage(Random.nextInt(30)))
 					cancels2 += system.scheduler.schedule(simulationTime1 milliseconds,3000 milliseconds,self,GetPicture(Random.nextInt(numOfUsers),Random.nextInt(5)))
 					// cancels2 += system.scheduler.schedule(4500 milliseconds,5000 milliseconds,self,GetAlbum(Random.nextInt(numOfUsers),Random.nextInt(5)))
-					cancels2 += system.scheduler.schedule(simulationTime1 milliseconds,6000 milliseconds,self,GetPost(Random.nextInt(numOfUsers),Random.nextInt(20)))
+					cancels2 += system.scheduler.schedule(simulationTime1 milliseconds,6000 milliseconds,self,GetPost(Random.nextInt(numOfUsers),Random.nextInt(10)))
 
 				case "StopActivity1" =>
 					if(System.currentTimeMillis - start > simulationTime1){ // in milliseconds
@@ -284,11 +284,13 @@ object project4 {
 
 				case GetProfile(getID: Int) =>
 					println("user "+myID+" requesting profile of "+getID)
-					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getProfile?userID="+myID+"&getID="+getID))
+					val responseFuture = pipeline(Post("http://localhost:8080/facebook/getProfile?userID="+myID+"&getID="+getID+"&accessToken="+token))
 					responseFuture onComplete {
 						case Success(str: HttpResponse) =>
 							if(str.entity.asString == "PermissionDenied"){
 								println("PermissionDenied for user "+myID+" to access profile of "+getID)
+							} else if(str.entity.asString == "SESSION_EXPIRED"){
+								println("User "+myID+" session expired!! Please Login!!")
 							} else {
 								if(getID == myID){
 									var data: SendProfile = str.entity.asString.parseJson.convertTo[SendProfile]
@@ -436,7 +438,7 @@ object project4 {
 							} else if(str.entity.asString == "PictureNotFound"){
 								println("No picture "+picID+" of user "+userID+" exists!!")
 							} else {
-								println("Getting picture "+picID+" of user "+userID+" for user "+myID)
+								// println("Getting picture "+picID+" of user "+userID+" for user "+myID)
 								var sendPic: SendPic = str.entity.asString.parseJson.convertTo[SendPic]
 
 								// First decrypt with your private key to get AES secret key
@@ -508,7 +510,7 @@ object project4 {
 							} else if(str.entity.asString == "PostNotFound"){
 								println("No post "+postID+" of user "+userID+" exists!!")
 							} else {
-								println("Getting post "+postID+" of user "+userID+" for user "+myID)
+								// println("Getting post "+postID+" of user "+userID+" for user "+myID)
 								var sendPost: SendPost = str.entity.asString.parseJson.convertTo[SendPost]
 
 								// First decrypt with your private key to get AES secret key
